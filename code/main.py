@@ -1,4 +1,4 @@
-import numpy
+import numpy as np
 import torch
 from utils import load_data, set_params, evaluate
 from module import HeCo
@@ -7,6 +7,31 @@ import datetime
 import pickle as pkl
 import os
 import random
+from sklearn.cluster import KMeans
+from sklearn.metrics import normalized_mutual_info_score, adjusted_rand_score
+
+
+# https://github.com/liun-online/HeCo/issues/1
+def evaluate_cluster(embeds, y, n_label):
+    Y_pred = KMeans(n_label, random_state=0).fit(embeds).predict(embeds)
+    nmi = normalized_mutual_info_score(y, Y_pred)
+    ari = adjusted_rand_score(y, Y_pred)
+    return nmi, ari
+
+def evaluate_clu(dataset, embeds, label):
+    if dataset =="acm":
+        n_label = 3
+    elif dataset =="dblp":
+        n_label = 4
+    elif dataset == "aminer":
+        n_label = 4
+    elif dataset == "freebase":
+        n_label = 3
+    embeds = embeds.cpu().data.numpy()
+    label = np.argmax(label.cpu().data.numpy(), axis=-1)
+    nmi, ari = evaluate_cluster(embeds, label, n_label)
+    print("\t[clustering] nmi: {:.4f} ari: {:.4f}"
+            .format(nmi, ari) )
 
 
 warnings.filterwarnings('ignore')
@@ -22,7 +47,7 @@ own_str = args.dataset
 
 ## random seed ##
 seed = args.seed
-numpy.random.seed(seed)
+np.random.seed(seed)
 random.seed(seed)
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
@@ -89,6 +114,8 @@ def train():
     time = (endtime - starttime).seconds
     print("Total time: ", time, "s")
     
+    evaluate_clu(args.dataset, embeds, label)
+
     if args.save_emb:
         f = open("./embeds/"+args.dataset+"/"+str(args.turn)+".pkl", "wb")
         pkl.dump(embeds.cpu().data.numpy(), f)
