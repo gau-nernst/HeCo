@@ -81,7 +81,7 @@ class Sc_encoder(nn.Module):
                     select_one = torch.tensor(np.random.choice(per_node_nei, sample_num,
                                                                replace=True))[np.newaxis]
                 sele_nei.append(select_one)
-            sele_nei = torch.cat(sele_nei, dim=0).cuda()
+            sele_nei = torch.cat(sele_nei, dim=0).to(nei_h[0].device)
             one_type_emb = F.elu(self.intra[i](sele_nei, nei_h[i + 1], nei_h[0]))
             embeds.append(one_type_emb)
         z_mc = self.inter(embeds)
