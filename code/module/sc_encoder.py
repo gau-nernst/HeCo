@@ -14,7 +14,7 @@ class inter_att(nn.Module):
         self.att = nn.Parameter(torch.empty(size=(1, hidden_dim)), requires_grad=True)
         nn.init.xavier_normal_(self.att.data, gain=1.414)
 
-        self.softmax = nn.Softmax()
+        self.softmax = nn.Softmax(dim=0)
         if attn_drop:
             self.attn_drop = nn.Dropout(attn_drop)
         else:
@@ -28,7 +28,8 @@ class inter_att(nn.Module):
             beta.append(attn_curr.matmul(sp.t()))
         beta = torch.cat(beta, dim=-1).view(-1)
         beta = self.softmax(beta)
-        print("sc ", beta.data.cpu().numpy())  # type-level attention
+        self.beta = beta.detach().cpu().numpy()
+        # print("sc ", beta.data.cpu().numpy())  # type-level attention
         z_mc = 0
         for i in range(len(embeds)):
             z_mc += embeds[i] * beta[i]

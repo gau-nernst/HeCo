@@ -41,7 +41,7 @@ class Attention(nn.Module):
         self.att = nn.Parameter(torch.empty(size=(1, hidden_dim)), requires_grad=True)
         nn.init.xavier_normal_(self.att.data, gain=1.414)
 
-        self.softmax = nn.Softmax()
+        self.softmax = nn.Softmax(dim=0)
         if attn_drop:
             self.attn_drop = nn.Dropout(attn_drop)
         else:
@@ -55,7 +55,8 @@ class Attention(nn.Module):
             beta.append(attn_curr.matmul(sp.t()))
         beta = torch.cat(beta, dim=-1).view(-1)
         beta = self.softmax(beta)
-        print("mp ", beta.data.cpu().numpy())  # semantic attention
+        self.beta = beta.detach().cpu().numpy()
+        # print("mp ", beta.data.cpu().numpy())  # semantic attention
         z_mp = 0
         for i in range(len(embeds)):
             z_mp += embeds[i]*beta[i]

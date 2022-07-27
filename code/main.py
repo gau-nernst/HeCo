@@ -87,7 +87,16 @@ def train():
         model.train()
         optimiser.zero_grad()
         loss = model(feats, pos, mps, nei_index)
-        print("loss ", loss.data.cpu())
+        # print("loss ", loss.data.cpu())
+        if epoch % 100 == 0:
+            log_msg = (
+                f"Epoch: {epoch:04d}, "
+                f"Loss: {loss.cpu().item():.4f}, "
+                f"mp: {model.mp.att.beta.round(4)}, "
+                f"sc: {model.sc.inter.beta.round(4)}"
+            )
+            print(log_msg)
+
         if loss < best:
             best = loss
             best_t = epoch
