@@ -1,6 +1,7 @@
 import numpy as np
 import scipy.sparse as sp
 import torch as th
+import torch
 from sklearn.preprocessing import OneHotEncoder
 
 
@@ -42,6 +43,14 @@ def sparse_mx_to_torch_sparse_tensor(sparse_mx):
     return th.sparse.FloatTensor(indices, values, shape)
 
 
+def torch_sparse_eye(n: int):
+    return torch.sparse_coo_tensor(
+        torch.arange(n).unsqueeze(0).repeat(2, 1),
+        torch.ones(n),
+        size=(n, n)
+    )
+
+
 def load_acm(ratio, type_num):
     # The order of node types: 0 p 1 a 2 s
     path = "../data/acm/"
@@ -50,8 +59,9 @@ def load_acm(ratio, type_num):
     nei_a = np.load(path + "nei_a.npy", allow_pickle=True)
     nei_s = np.load(path + "nei_s.npy", allow_pickle=True)
     feat_p = sp.load_npz(path + "p_feat.npz")
-    feat_a = sp.eye(type_num[1])
-    feat_s = sp.eye(type_num[2])
+    # feat_a = sp.eye(type_num[1])
+    # feat_s = sp.eye(type_num[2])
+    feat_a, feat_s = [torch_sparse_eye(num) for num in type_num[1:]]
     pap = sp.load_npz(path + "pap.npz")
     psp = sp.load_npz(path + "psp.npz")
     pos = sp.load_npz(path + "pos.npz")
@@ -63,8 +73,8 @@ def load_acm(ratio, type_num):
     nei_a = [th.LongTensor(i) for i in nei_a]
     nei_s = [th.LongTensor(i) for i in nei_s]
     feat_p = th.FloatTensor(preprocess_features(feat_p))
-    feat_a = th.FloatTensor(preprocess_features(feat_a))
-    feat_s = th.FloatTensor(preprocess_features(feat_s))
+    # feat_a = th.FloatTensor(preprocess_features(feat_a))
+    # feat_s = th.FloatTensor(preprocess_features(feat_s))
     pap = sparse_mx_to_torch_sparse_tensor(normalize_adj(pap))
     psp = sparse_mx_to_torch_sparse_tensor(normalize_adj(psp))
     pos = sparse_mx_to_torch_sparse_tensor(pos)
@@ -81,7 +91,8 @@ def load_dblp(ratio, type_num):
     label = encode_onehot(label)
     nei_p = np.load(path + "nei_p.npy", allow_pickle=True)
     feat_a = sp.load_npz(path + "a_feat.npz").astype("float32")
-    feat_p = sp.eye(type_num[1])
+    # feat_p = sp.eye(type_num[1])
+    feat_p = torch_sparse_eye(type_num[1])
     apa = sp.load_npz(path + "apa.npz")
     apcpa = sp.load_npz(path + "apcpa.npz")
     aptpa = sp.load_npz(path + "aptpa.npz")
@@ -92,7 +103,7 @@ def load_dblp(ratio, type_num):
     
     label = th.FloatTensor(label)
     nei_p = [th.LongTensor(i) for i in nei_p]
-    feat_p = th.FloatTensor(preprocess_features(feat_p))
+    # feat_p = th.FloatTensor(preprocess_features(feat_p))
     feat_a = th.FloatTensor(preprocess_features(feat_a))
     apa = sparse_mx_to_torch_sparse_tensor(normalize_adj(apa))
     apcpa = sparse_mx_to_torch_sparse_tensor(normalize_adj(apcpa))
@@ -112,9 +123,10 @@ def load_aminer(ratio, type_num):
     nei_a = np.load(path + "nei_a.npy", allow_pickle=True)
     nei_r = np.load(path + "nei_r.npy", allow_pickle=True)
     # Because none of P, A or R has features, we assign one-hot encodings to all of them.
-    feat_p = sp.eye(type_num[0])
-    feat_a = sp.eye(type_num[1])
-    feat_r = sp.eye(type_num[2])
+    # feat_p = sp.eye(type_num[0])
+    # feat_a = sp.eye(type_num[1])
+    # feat_r = sp.eye(type_num[2])
+    feat_p, feat_a, feat_r = [torch_sparse_eye(num) for num in type_num]
     pap = sp.load_npz(path + "pap.npz")
     prp = sp.load_npz(path + "prp.npz")
     pos = sp.load_npz(path + "pos.npz")
@@ -125,9 +137,9 @@ def load_aminer(ratio, type_num):
     label = th.FloatTensor(label)
     nei_a = [th.LongTensor(i) for i in nei_a]
     nei_r = [th.LongTensor(i) for i in nei_r]
-    feat_p = th.FloatTensor(preprocess_features(feat_p))
-    feat_a = th.FloatTensor(preprocess_features(feat_a))
-    feat_r = th.FloatTensor(preprocess_features(feat_r))
+    # feat_p = th.FloatTensor(preprocess_features(feat_p))
+    # feat_a = th.FloatTensor(preprocess_features(feat_a))
+    # feat_r = th.FloatTensor(preprocess_features(feat_r))
     pap = sparse_mx_to_torch_sparse_tensor(normalize_adj(pap))
     prp = sparse_mx_to_torch_sparse_tensor(normalize_adj(prp))
     pos = sparse_mx_to_torch_sparse_tensor(pos)
@@ -145,10 +157,11 @@ def load_freebase(ratio, type_num):
     nei_d = np.load(path + "nei_d.npy", allow_pickle=True)
     nei_a = np.load(path + "nei_a.npy", allow_pickle=True)
     nei_w = np.load(path + "nei_w.npy", allow_pickle=True)
-    feat_m = sp.eye(type_num[0])
-    feat_d = sp.eye(type_num[1])
-    feat_a = sp.eye(type_num[2])
-    feat_w = sp.eye(type_num[3])
+    # feat_m = sp.eye(type_num[0])
+    # feat_d = sp.eye(type_num[1])
+    # feat_a = sp.eye(type_num[2])
+    # feat_w = sp.eye(type_num[3])
+    feat_m, feat_d, feat_a, feat_w = [torch_sparse_eye(num) for num in type_num]
     # Because none of M, D, A or W has features, we assign one-hot encodings to all of them.
     mam = sp.load_npz(path + "mam.npz")
     mdm = sp.load_npz(path + "mdm.npz")
@@ -162,10 +175,10 @@ def load_freebase(ratio, type_num):
     nei_d = [th.LongTensor(i) for i in nei_d]
     nei_a = [th.LongTensor(i) for i in nei_a]
     nei_w = [th.LongTensor(i) for i in nei_w]
-    feat_m = th.FloatTensor(preprocess_features(feat_m))
-    feat_d = th.FloatTensor(preprocess_features(feat_d))
-    feat_a = th.FloatTensor(preprocess_features(feat_a))
-    feat_w = th.FloatTensor(preprocess_features(feat_w))
+    # feat_m = th.FloatTensor(preprocess_features(feat_m))
+    # feat_d = th.FloatTensor(preprocess_features(feat_d))
+    # feat_a = th.FloatTensor(preprocess_features(feat_a))
+    # feat_w = th.FloatTensor(preprocess_features(feat_w))
     mam = sparse_mx_to_torch_sparse_tensor(normalize_adj(mam))
     mdm = sparse_mx_to_torch_sparse_tensor(normalize_adj(mdm))
     mwm = sparse_mx_to_torch_sparse_tensor(normalize_adj(mwm))
