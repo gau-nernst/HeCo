@@ -9,7 +9,7 @@ import torch
 from sklearn.cluster import KMeans
 from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
 
-from module import HeCo
+from module import HeCo, HeCoDrop
 from utils import evaluate, load_data, set_params
 
 
@@ -62,20 +62,26 @@ def train():
     print("Dataset: ", args.dataset)
     print("The number of meta-paths: ", P)
     
-    model = HeCo(args.hidden_dim, feats_dim_list, args.feat_drop, args.attn_drop,
-                    P, args.sample_rate, args.nei_num, args.tau, args.lam)
-    optimiser = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.l2_coef)
+    # move data to device e.g. GPU
+    feats = [feat.to(device) for feat in feats]
+    mps = [mp.to(device) for mp in mps]
+    pos = pos.to(device)
+    label = label.to(device)
+    idx_train = [i.to(device) for i in idx_train]
+    idx_val = [i.to(device) for i in idx_val]
+    idx_test = [i.to(device) for i in idx_test]
 
-    if torch.cuda.is_available():
-        print('Using CUDA')
-        model.cuda()
-        feats = [feat.cuda() for feat in feats]
-        mps = [mp.cuda() for mp in mps]
-        pos = pos.cuda()
-        label = label.cuda()
-        idx_train = [i.cuda() for i in idx_train]
-        idx_val = [i.cuda() for i in idx_val]
-        idx_test = [i.cuda() for i in idx_test]
+    if args.heco_drop:
+        model_cls = HeCoDrop
+        inputs = (feats, pos, mps, nei_index, args.beta1, args.beta2)
+
+    else:
+        model_cls = HeCo
+        inputs = (feats, pos, mps, nei_index)
+
+    model = model_cls(args.hidden_dim, feats_dim_list, args.feat_drop, args.attn_drop,
+                    P, args.sample_rate, args.nei_num, args.tau, args.lam).to(device)
+    optimiser = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.l2_coef)
 
     cnt_wait = 0
     best = 1e9
@@ -86,8 +92,7 @@ def train():
     for epoch in range(args.nb_epochs):
         model.train()
         optimiser.zero_grad()
-        loss = model(feats, pos, mps, nei_index)
-        # print("loss ", loss.data.cpu())
+        loss = model(*inputs)
         if epoch % 100 == 0:
             log_msg = (
                 f"Epoch: {epoch:04d}, "

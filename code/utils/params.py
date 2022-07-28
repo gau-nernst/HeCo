@@ -1,150 +1,131 @@
 import argparse
-import sys
+from typing import Any, Dict
 
 
-argv = sys.argv
-dataset = argv[1]
-
-
-def acm_params():
+def get_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--save_emb', action="store_true")
-    parser.add_argument('--turn', type=int, default=0)
-    parser.add_argument('--dataset', type=str, default="acm")
-    parser.add_argument('--ratio', type=int, default=[20, 40, 60])
-    parser.add_argument('--gpu', type=int, default=0)
-    parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--hidden_dim', type=int, default=64)
-    parser.add_argument('--nb_epochs', type=int, default=10000)
-    
+    parser.add_argument("dataset")
+    parser.add_argument("--save_emb", action="store_true")
+    parser.add_argument("--turn", type=int, default=0)
+    parser.add_argument("--ratio", nargs="+", type=int, default=[20, 40, 60])
+    parser.add_argument("--gpu", type=int, default=0)
+    parser.add_argument("--seed", type=int)
+    parser.add_argument("--hidden_dim", type=int, default=64)
+    parser.add_argument("--nb_epochs", type=int, default=10000)
+
     # The parameters of evaluation
-    parser.add_argument('--eva_lr', type=float, default=0.05)
-    parser.add_argument('--eva_wd', type=float, default=0)
-    
+    parser.add_argument("--eva_lr", type=float)
+    parser.add_argument("--eva_wd", type=float)
+
     # The parameters of learning process
-    parser.add_argument('--patience', type=int, default=5)
-    parser.add_argument('--lr', type=float, default=0.0008)
-    parser.add_argument('--l2_coef', type=float, default=0)
-    
+    parser.add_argument("--patience", type=int)
+    parser.add_argument("--lr", type=float)
+    parser.add_argument("--l2_coef", type=float)
+
     # model-specific parameters
-    parser.add_argument('--tau', type=float, default=0.8)
-    parser.add_argument('--feat_drop', type=float, default=0.3)
-    parser.add_argument('--attn_drop', type=float, default=0.5)
-    parser.add_argument('--sample_rate', nargs='+', type=int, default=[7, 1])
-    parser.add_argument('--lam', type=float, default=0.5)
-    
-    args, _ = parser.parse_known_args()
-    args.type_num = [4019, 7167, 60]  # the number of every node type
-    args.nei_num = 2  # the number of neighbors' types
-    return args
+    parser.add_argument("--tau", type=float)
+    parser.add_argument("--feat_drop", type=float)
+    parser.add_argument("--attn_drop", type=float)
+    parser.add_argument("--sample_rate", nargs="+", type=int)
+    parser.add_argument("--lam", type=float)
+
+    # HeCo-drop
+    parser.add_argument("--heco_drop", action="store_true")
+    parser.add_argument("--beta1", type=float)
+    parser.add_argument("--beta2", type=float)
+
+    return parser
 
 
-def dblp_params():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--save_emb', action="store_true")
-    parser.add_argument('--turn', type=int, default=0)
-    parser.add_argument('--dataset', type=str, default="dblp")
-    parser.add_argument('--ratio', type=int, default=[20, 40, 60])
-    parser.add_argument('--gpu', type=int, default=0)
-    parser.add_argument('--seed', type=int, default=53)
-    parser.add_argument('--hidden_dim', type=int, default=64)
-    parser.add_argument('--nb_epochs', type=int, default=10000)
-    
-    # The parameters of evaluation
-    parser.add_argument('--eva_lr', type=float, default=0.01)
-    parser.add_argument('--eva_wd', type=float, default=0)
-    
-    # The parameters of learning process
-    parser.add_argument('--patience', type=int, default=30)
-    parser.add_argument('--lr', type=float, default=0.0008)
-    parser.add_argument('--l2_coef', type=float, default=0)
-    
-    # model-specific parameters
-    parser.add_argument('--tau', type=float, default=0.9)
-    parser.add_argument('--feat_drop', type=float, default=0.4)
-    parser.add_argument('--attn_drop', type=float, default=0.35)
-    parser.add_argument('--sample_rate', nargs='+', type=int, default=[6])
-    parser.add_argument('--lam', type=float, default=0.5) 
-
-    args, _ = parser.parse_known_args()
-    args.type_num = [4057, 14328, 7723, 20]  # the number of every node type
-    args.nei_num = 1  # the number of neighbors' types
-    return args
-
-
-def aminer_params():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--save_emb', action="store_true")
-    parser.add_argument('--turn', type=int, default=0)
-    parser.add_argument('--dataset', type=str, default="aminer")
-    parser.add_argument('--ratio', type=int, default=[20, 40, 60])
-    parser.add_argument('--gpu', type=int, default=0)
-    parser.add_argument('--seed', type=int, default=4)
-    parser.add_argument('--hidden_dim', type=int, default=64)
-    parser.add_argument('--nb_epochs', type=int, default=10000)
-    
-    # The parameters of evaluation
-    parser.add_argument('--eva_lr', type=float, default=0.01)
-    parser.add_argument('--eva_wd', type=float, default=0)
-    
-    # The parameters of learning process
-    parser.add_argument('--patience', type=int, default=40)
-    parser.add_argument('--lr', type=float, default=0.003)
-    parser.add_argument('--l2_coef', type=float, default=0)
-    
-    # model-specific parameters
-    parser.add_argument('--tau', type=float, default=0.5)
-    parser.add_argument('--feat_drop', type=float, default=0.5)
-    parser.add_argument('--attn_drop', type=float, default=0.5)
-    parser.add_argument('--sample_rate', nargs='+', type=int, default=[3, 8])
-    parser.add_argument('--lam', type=float, default=0.5)
-
-    args, _ = parser.parse_known_args()
-    args.type_num = [6564, 13329, 35890]  # the number of every node type
-    args.nei_num = 2  # the number of neighbors' types
-    return args
-
-
-def freebase_params():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--save_emb', action="store_true")
-    parser.add_argument('--turn', type=int, default=0)    
-    parser.add_argument('--dataset', type=str, default="freebase")
-    parser.add_argument('--ratio', type=int, default=[20, 40, 60])
-    parser.add_argument('--gpu', type=int, default=0)
-    parser.add_argument('--seed', type=int, default=32)
-    parser.add_argument('--hidden_dim', type=int, default=64)
-    parser.add_argument('--nb_epochs', type=int, default=10000)
-    
-    # The parameters of evaluation
-    parser.add_argument('--eva_lr', type=float, default=0.01)
-    parser.add_argument('--eva_wd', type=float, default=0)
-    
-    # The parameters of learning process
-    parser.add_argument('--patience', type=int, default=20)
-    parser.add_argument('--lr', type=float, default=0.001)
-    parser.add_argument('--l2_coef', type=float, default=0)
-    
-    # model-specific parameters
-    parser.add_argument('--tau', type=float, default=0.5)
-    parser.add_argument('--feat_drop', type=float, default=0.1)
-    parser.add_argument('--attn_drop', type=float, default=0.3)
-    parser.add_argument('--sample_rate', nargs='+', type=int, default=[1, 18, 2])
-    parser.add_argument('--lam', type=float, default=0.5)
-    
-    args, _ = parser.parse_known_args()
-    args.type_num = [3492, 2502, 33401, 4459]  # the number of every node type
-    args.nei_num = 3  # the number of neighbors' types
-    return args
-
-
-def set_params():
+def get_default_params(dataset: str) -> Dict[str, Any]:
     if dataset == "acm":
-        args = acm_params()
-    elif dataset == "dblp":
-        args = dblp_params()
-    elif dataset == "aminer":
-        args = aminer_params()
-    elif dataset == "freebase":
-        args = freebase_params()
+        return {
+            "seed": 0,
+            "eva_lr": 0.05,
+            "eva_wd": 0,
+            "patience": 5,
+            "lr": 0.0008,
+            "l2_coef": 0,
+            "tau": 0.8,
+            "feat_drop": 0.3,
+            "attn_drop": 0.5,
+            "sample_rate": [7, 1],
+            "lam": 0.5,
+            "beta1": 0.5,
+            "beta2": 0.5,
+            "type_num": [4019, 7167, 60],
+            "nei_num": 2,
+        }
+
+    if dataset == "dblp":
+        return {
+            "seed": 53,
+            "eva_lr": 0.01,
+            "eva_wd": 0,
+            "patience": 30,
+            "lr": 0.0008,
+            "l2_coef": 0,
+            "tau": 0.9,
+            "feat_drop": 0.4,
+            "attn_drop": 0.35,
+            "sample_rate": [6],
+            "lam": 0.5,
+            "beta1": 0.5,
+            "beta2": 0.5,
+            "type_num": [4057, 14328, 7723, 20],
+            "nei_num": 1,
+        }
+
+    if dataset == "aminer":
+        return {
+            "seed": 4,
+            "eva_lr": 0.01,
+            "eva_wd": 0,
+            "patience": 40,
+            "lr": 0.003,
+            "l2_coef": 0,
+            "tau": 0.5,
+            "feat_drop": 0.5,
+            "attn_drop": 0.5,
+            "sample_rate": [3, 8],
+            "lam": 0.5,
+            "beta1": 0.5,
+            "beta2": 0.5,
+            "type_num": [6564, 13329, 35890],
+            "nei_num": 2,
+        }
+
+    if dataset == "freebase":
+        return {
+            "seed": 32,
+            "eva_lr": 0.01,
+            "eva_wd": 0,
+            "patience": 20,
+            "lr": 0.001,
+            "l2_coef": 0,
+            "tau": 0.5,
+            "feat_drop": 0.1,
+            "attn_drop": 0.3,
+            "sample_rate": [1, 18, 2],
+            "lam": 0.5,
+            "beta1": 0.5,
+            "beta2": 0.5,
+            "type_num": [3492, 2502, 33401, 4459],
+            "nei_num": 3,
+        }
+
+    raise ValueError(f"Unknown dataset: {dataset}")
+
+
+def set_params() -> argparse.Namespace:
+    args = get_parser().parse_args()
+    default_params = get_default_params(args.dataset)
+
+    for k, v in default_params.items():
+        if k in ("type_num", "nei_num"):
+            setattr(args, k, v)
+
+        elif getattr(args, k) is None:
+            setattr(args, k, v)
+
     return args
