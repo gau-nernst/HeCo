@@ -1,14 +1,16 @@
-import numpy as np
-import torch
-from utils import load_data, set_params, evaluate
-from module import HeCo
-import warnings
 import datetime
 import pickle as pkl
-import os
 import random
+import warnings
+from copy import deepcopy
+
+import numpy as np
+import torch
 from sklearn.cluster import KMeans
-from sklearn.metrics import normalized_mutual_info_score, adjusted_rand_score
+from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
+
+from module import HeCo
+from utils import evaluate, load_data, set_params
 
 
 # https://github.com/liun-online/HeCo/issues/1
@@ -41,9 +43,6 @@ if torch.cuda.is_available():
     torch.cuda.set_device(args.gpu)
 else:
     device = torch.device("cpu")
-
-## name of intermediate document ##
-own_str = args.dataset
 
 ## random seed ##
 seed = args.seed
@@ -81,6 +80,7 @@ def train():
     cnt_wait = 0
     best = 1e9
     best_t = 0
+    best_state_dict = None
 
     starttime = datetime.datetime.now()
     for epoch in range(args.nb_epochs):
@@ -101,7 +101,7 @@ def train():
             best = loss
             best_t = epoch
             cnt_wait = 0
-            torch.save(model.state_dict(), 'HeCo_'+own_str+'.pkl')
+            best_state_dict = deepcopy(model.state_dict())
         else:
             cnt_wait += 1
 
@@ -112,9 +112,8 @@ def train():
         optimiser.step()
         
     print('Loading {}th epoch'.format(best_t))
-    model.load_state_dict(torch.load('HeCo_'+own_str+'.pkl'))
+    model.load_state_dict(best_state_dict)
     model.eval()
-    os.remove('HeCo_'+own_str+'.pkl')
     embeds = model.get_embeds(feats, mps)
     for i in range(len(idx_train)):
         evaluate(embeds, args.ratio[i], idx_train[i], idx_val[i], idx_test[i], label, nb_classes, device, args.dataset,
