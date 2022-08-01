@@ -1,2 +1,4 @@
 *.pkl
 __pycache__/
+wandb/
+result_*.txt

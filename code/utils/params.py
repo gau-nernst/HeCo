@@ -4,7 +4,7 @@ from typing import Any, Dict
 
 def get_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument("dataset")
+    parser.add_argument("--dataset", required=True)
     parser.add_argument("--save_emb", action="store_true")
     parser.add_argument("--turn", type=int, default=0)
     parser.add_argument("--ratio", nargs="+", type=int, default=[20, 40, 60])
