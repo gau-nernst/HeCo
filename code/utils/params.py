@@ -8,7 +8,7 @@ def get_parser():
     parser.add_argument("--save_emb", action="store_true")
     parser.add_argument("--turn", type=int, default=0)
     parser.add_argument("--ratio", nargs="+", type=int, default=[20, 40, 60])
-    parser.add_argument("--gpu", type=int, default=0)
+    parser.add_argument("--device", default="cpu")
     parser.add_argument("--seed", type=int)
     parser.add_argument("--hidden_dim", type=int, default=64)
     parser.add_argument("--nb_epochs", type=int, default=10000)

@@ -37,22 +37,17 @@ def evaluate_clu(dataset, embeds, label):
 
 
 warnings.filterwarnings('ignore')
-args = set_params()
-if torch.cuda.is_available():
-    device = torch.device("cuda:" + str(args.gpu))
-    torch.cuda.set_device(args.gpu)
-else:
-    device = torch.device("cpu")
 
 ## random seed ##
-seed = args.seed
-np.random.seed(seed)
-random.seed(seed)
-torch.manual_seed(seed)
-torch.cuda.manual_seed(seed)
+def seed_everything(seed):
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
 
 
-def train():
+def train(args):
+    device = args.device
     nei_index, feats, mps, pos, label, idx_train, idx_val, idx_test = \
         load_data(args.dataset, args.ratio, args.type_num)
     nb_classes = label.shape[-1]
@@ -136,4 +131,6 @@ def train():
 
 
 if __name__ == '__main__':
-    train()
+    args = set_params()
+    seed_everything(args.seed)
+    train(args)
