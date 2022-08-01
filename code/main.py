@@ -13,30 +13,17 @@ from module import HeCo, HeCoDrop
 from utils import evaluate, load_data, set_params
 
 
+warnings.filterwarnings('ignore')
+
+
 # https://github.com/liun-online/HeCo/issues/1
 def evaluate_cluster(embeds, y, n_label):
-    Y_pred = KMeans(n_label, random_state=0).fit(embeds).predict(embeds)
+    Y_pred = KMeans(n_label, random_state=0).fit_predict(embeds)
     nmi = normalized_mutual_info_score(y, Y_pred)
     ari = adjusted_rand_score(y, Y_pred)
+    print(f"\t[clustering] nmi: {nmi:.4f} ari: {ari:.4f}")
     return nmi, ari
 
-def evaluate_clu(dataset, embeds, label):
-    if dataset =="acm":
-        n_label = 3
-    elif dataset =="dblp":
-        n_label = 4
-    elif dataset == "aminer":
-        n_label = 4
-    elif dataset == "freebase":
-        n_label = 3
-    embeds = embeds.cpu().data.numpy()
-    label = np.argmax(label.cpu().data.numpy(), axis=-1)
-    nmi, ari = evaluate_cluster(embeds, label, n_label)
-    print("\t[clustering] nmi: {:.4f} ari: {:.4f}"
-            .format(nmi, ari) )
-
-
-warnings.filterwarnings('ignore')
 
 ## random seed ##
 def seed_everything(seed):
@@ -46,16 +33,13 @@ def seed_everything(seed):
     torch.cuda.manual_seed(seed)
 
 
-def train(args):
+def get_data(args):
     device = args.device
     nei_index, feats, mps, pos, label, idx_train, idx_val, idx_test = \
         load_data(args.dataset, args.ratio, args.type_num)
-    nb_classes = label.shape[-1]
-    feats_dim_list = [i.shape[1] for i in feats]
-    P = int(len(mps))
     print("seed ",args.seed)
     print("Dataset: ", args.dataset)
-    print("The number of meta-paths: ", P)
+    print("The number of meta-paths: ", len(mps))
     
     # move data to device e.g. GPU
     feats = [feat.to(device) for feat in feats]
@@ -65,6 +49,15 @@ def train(args):
     idx_train = [i.to(device) for i in idx_train]
     idx_val = [i.to(device) for i in idx_val]
     idx_test = [i.to(device) for i in idx_test]
+
+    return nei_index, feats, mps, pos, label, idx_train, idx_val, idx_test
+
+
+def train(args, data):
+    device = args.device
+    nei_index, feats, mps, pos, label, idx_train, idx_val, idx_test = data
+    P = int(len(mps))
+    feats_dim_list = [i.shape[1] for i in feats]
 
     if args.heco_drop:
         model_cls = HeCoDrop
@@ -110,27 +103,47 @@ def train(args):
             break
         loss.backward()
         optimiser.step()
-        
+
+    endtime = datetime.datetime.now()
+    time = (endtime - starttime).seconds
+    print("Total time: ", time, "s")
+
     print('Loading {}th epoch'.format(best_t))
     model.load_state_dict(best_state_dict)
     model.eval()
     embeds = model.get_embeds(feats, mps)
-    for i in range(len(idx_train)):
-        evaluate(embeds, args.ratio[i], idx_train[i], idx_val[i], idx_test[i], label, nb_classes, device, args.dataset,
-                 args.eva_lr, args.eva_wd)
-    endtime = datetime.datetime.now()
-    time = (endtime - starttime).seconds
-    print("Total time: ", time, "s")
-    
-    evaluate_clu(args.dataset, embeds, label)
 
     if args.save_emb:
         f = open("./embeds/"+args.dataset+"/"+str(args.turn)+".pkl", "wb")
         pkl.dump(embeds.cpu().data.numpy(), f)
         f.close()
 
+    return embeds
+
+
+def eval(args, data, embeds):
+    device = args.device
+    nei_index, feats, mps, pos, label, idx_train, idx_val, idx_test = data
+    nb_classes = label.shape[-1]
+
+    metrics = {}
+    for i in range(len(idx_train)):
+        f1_macro = evaluate(embeds, args.ratio[i], idx_train[i], idx_val[i], idx_test[i], label, nb_classes, device, args.dataset,
+                 args.eva_lr, args.eva_wd)
+        metrics[f"f1_macro_{args.ratio[i]}"] = f1_macro
+
+    embeds = embeds.cpu().data.numpy()
+    label = np.argmax(label.cpu().data.numpy(), axis=-1)
+    nmi, ari = evaluate_cluster(embeds, label, nb_classes)
+    metrics["nmi"] = nmi
+    metrics["ari"] = ari
+
+    return metrics
+
 
 if __name__ == '__main__':
     args = set_params()
     seed_everything(args.seed)
-    train(args)
+    data = get_data(args)
+    embeds = train(args, data)
+    eval(args, data, embeds)
