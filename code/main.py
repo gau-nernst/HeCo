@@ -128,9 +128,11 @@ def eval(args, data, embeds):
 
     metrics = {}
     for i in range(len(idx_train)):
-        f1_macro = evaluate(embeds, args.ratio[i], idx_train[i], idx_val[i], idx_test[i], label, nb_classes, device, args.dataset,
+        f1_macro, f1_micro, auc = evaluate(embeds, args.ratio[i], idx_train[i], idx_val[i], idx_test[i], label, nb_classes, device, args.dataset,
                  args.eva_lr, args.eva_wd)
         metrics[f"f1_macro_{args.ratio[i]}"] = f1_macro
+        metrics[f"f1_micro_{args.ratio[i]}"] = f1_micro
+        metrics[f"auc_{args.ratio[i]}"] = auc
 
     embeds = embeds.cpu().data.numpy()
     label = np.argmax(label.cpu().data.numpy(), axis=-1)
