@@ -128,4 +128,8 @@ def set_params() -> argparse.Namespace:
         elif getattr(args, k) is None:
             setattr(args, k, v)
 
+    if not args.heco_drop:
+        args.beta1 = None
+        args.beta2 = None
+    
     return args

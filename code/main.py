@@ -3,6 +3,7 @@ import pickle as pkl
 import random
 import warnings
 from copy import deepcopy
+import time
 
 import numpy as np
 import torch
@@ -143,9 +144,28 @@ def eval(args, data, embeds):
     return metrics
 
 
-if __name__ == '__main__':
-    args = set_params()
+def log_to_file(args, start_time, end_time, metrics):
+    params = vars(args)
+    log_data = [start_time, end_time]
+    log_data.extend(params[k] for k in sorted(params.keys()))
+    log_data.extend(metrics[k] for k in sorted(metrics.keys()))
+    log_str = ",".join(f"\"{str(x)}\"" if isinstance(x, list) else str(x) for x in log_data) + "\n"
+    with open(f"{args.dataset}.log", "a") as f:
+        f.write(log_str)
+
+
+def run(args):
+    start_time = int(time.time())
+
     seed_everything(args.seed)
     data = get_data(args)
     embeds = train(args, data)
-    eval(args, data, embeds)
+    metrics = eval(args, data, embeds)
+
+    end_time = int(time.time())
+    log_to_file(args, start_time, end_time, metrics)
+
+
+if __name__ == '__main__':
+    args = set_params()
+    run(args)
