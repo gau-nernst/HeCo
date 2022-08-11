@@ -34,6 +34,9 @@ def get_parser():
     parser.add_argument("--beta1", type=float)
     parser.add_argument("--beta2", type=float)
 
+    # decoupled contrastive loss
+    parser.add_argument("--dcl", action="store_true")
+
     return parser
 
 
@@ -132,4 +135,7 @@ def set_params() -> argparse.Namespace:
         args.beta1 = None
         args.beta2 = None
     
+        if args.dcl:
+            raise NotImplementedError("DCL is not implemented for pure HeCo")
+
     return args

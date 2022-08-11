@@ -62,7 +62,7 @@ def train(args, data):
 
     if args.heco_drop:
         model_cls = HeCoDrop
-        inputs = (feats, pos, mps, nei_index, args.beta1, args.beta2)
+        inputs = (feats, pos, mps, nei_index, args.beta1, args.beta2, args.dcl)
 
     else:
         model_cls = HeCo
