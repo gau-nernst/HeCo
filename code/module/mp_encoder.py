@@ -42,10 +42,7 @@ class Attention(nn.Module):
         nn.init.xavier_normal_(self.att.data, gain=1.414)
 
         self.softmax = nn.Softmax(dim=0)
-        if attn_drop:
-            self.attn_drop = nn.Dropout(attn_drop)
-        else:
-            self.attn_drop = lambda x: x
+        self.attn_drop = nn.Dropout(attn_drop) if attn_drop > 0 else nn.Identity()
 
     def forward(self, embeds):
         beta = []
@@ -55,8 +52,7 @@ class Attention(nn.Module):
             beta.append(attn_curr.matmul(sp.t()))
         beta = torch.cat(beta, dim=-1).view(-1)
         beta = self.softmax(beta)
-        self.beta = beta.detach().cpu().numpy()
-        # print("mp ", beta.data.cpu().numpy())  # semantic attention
+        self.beta = beta.detach().cpu().numpy() # semantic attention
         z_mp = 0
         for i in range(len(embeds)):
             z_mp += embeds[i]*beta[i]
@@ -71,8 +67,6 @@ class Mp_encoder(nn.Module):
         self.att = Attention(hidden_dim, attn_drop)
 
     def forward(self, h, mps):
-        embeds = []
-        for i in range(self.P):
-            embeds.append(self.node_level[i](h, mps[i]))
+        embeds = [node_gcn(h, mps_i) for node_gcn, mps_i in zip(self.node_level, mps)]
         z_mp = self.att(embeds)
         return z_mp

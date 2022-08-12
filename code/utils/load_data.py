@@ -43,6 +43,13 @@ def sparse_mx_to_torch_sparse_tensor(sparse_mx):
     return th.sparse.FloatTensor(indices, values, shape)
 
 
+def scipy_sparse_to_torch_edge_indices(sparse_mat: sp.coo_matrix):
+    assert np.allclose(sparse_mat.data, np.ones(sparse_mat.nnz))
+    row_idx = torch.from_numpy(sparse_mat.row)
+    col_idx = torch.from_numpy(sparse_mat.col)
+    return torch.stack((row_idx, col_idx)).long()
+
+
 def torch_sparse_eye(n: int):
     return torch.sparse_coo_tensor(
         torch.arange(n).unsqueeze(0).repeat(2, 1),
@@ -77,7 +84,8 @@ def load_acm(ratio, type_num):
     # feat_s = th.FloatTensor(preprocess_features(feat_s))
     pap = sparse_mx_to_torch_sparse_tensor(normalize_adj(pap))
     psp = sparse_mx_to_torch_sparse_tensor(normalize_adj(psp))
-    pos = sparse_mx_to_torch_sparse_tensor(pos)
+    # pos = sparse_mx_to_torch_sparse_tensor(pos)
+    pos = scipy_sparse_to_torch_edge_indices(pos)
     train = [th.LongTensor(i) for i in train]
     val = [th.LongTensor(i) for i in val]
     test = [th.LongTensor(i) for i in test]
@@ -108,7 +116,8 @@ def load_dblp(ratio, type_num):
     apa = sparse_mx_to_torch_sparse_tensor(normalize_adj(apa))
     apcpa = sparse_mx_to_torch_sparse_tensor(normalize_adj(apcpa))
     aptpa = sparse_mx_to_torch_sparse_tensor(normalize_adj(aptpa))
-    pos = sparse_mx_to_torch_sparse_tensor(pos)
+    # pos = sparse_mx_to_torch_sparse_tensor(pos)
+    pos = scipy_sparse_to_torch_edge_indices(pos)
     train = [th.LongTensor(i) for i in train]
     val = [th.LongTensor(i) for i in val]
     test = [th.LongTensor(i) for i in test]
@@ -142,7 +151,8 @@ def load_aminer(ratio, type_num):
     # feat_r = th.FloatTensor(preprocess_features(feat_r))
     pap = sparse_mx_to_torch_sparse_tensor(normalize_adj(pap))
     prp = sparse_mx_to_torch_sparse_tensor(normalize_adj(prp))
-    pos = sparse_mx_to_torch_sparse_tensor(pos)
+    # pos = sparse_mx_to_torch_sparse_tensor(pos)
+    pos = scipy_sparse_to_torch_edge_indices(pos)
     train = [th.LongTensor(i) for i in train]
     val = [th.LongTensor(i) for i in val]
     test = [th.LongTensor(i) for i in test]
@@ -182,7 +192,8 @@ def load_freebase(ratio, type_num):
     mam = sparse_mx_to_torch_sparse_tensor(normalize_adj(mam))
     mdm = sparse_mx_to_torch_sparse_tensor(normalize_adj(mdm))
     mwm = sparse_mx_to_torch_sparse_tensor(normalize_adj(mwm))
-    pos = sparse_mx_to_torch_sparse_tensor(pos)
+    # pos = sparse_mx_to_torch_sparse_tensor(pos)
+    pos = scipy_sparse_to_torch_edge_indices(pos)
     train = [th.LongTensor(i) for i in train]
     val = [th.LongTensor(i) for i in val]
     test = [th.LongTensor(i) for i in test]

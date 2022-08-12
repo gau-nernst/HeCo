@@ -10,7 +10,7 @@ import torch
 from sklearn.cluster import KMeans
 from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
 
-from module import HeCo, HeCoDrop
+from module import HeCo
 from utils import evaluate, load_data, set_params
 
 
@@ -60,16 +60,9 @@ def train(args, data):
     P = int(len(mps))
     feats_dim_list = [i.shape[1] for i in feats]
 
-    if args.heco_drop:
-        model_cls = HeCoDrop
-        inputs = (feats, pos, mps, nei_index, args.beta1, args.beta2, args.dcl)
-
-    else:
-        model_cls = HeCo
-        inputs = (feats, pos, mps, nei_index)
-
-    model = model_cls(args.hidden_dim, feats_dim_list, args.feat_drop, args.attn_drop,
-                    P, args.sample_rate, args.nei_num, args.tau, args.lam).to(device)
+    model = HeCo(args.hidden_dim, feats_dim_list, args.feat_drop, args.attn_drop,
+                 P, args.sample_rate, args.nei_num, args.tau, args.lam,
+                 args.dcl, args.heco_drop, args.beta1, args.beta2).to(device)
     optimiser = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.l2_coef)
 
     cnt_wait = 0
@@ -81,11 +74,11 @@ def train(args, data):
     for epoch in range(args.nb_epochs):
         model.train()
         optimiser.zero_grad()
-        loss = model(*inputs)
+        loss = model(feats, pos, mps, nei_index)
         if epoch % 100 == 0:
             log_msg = (
                 f"Epoch: {epoch:04d}, "
-                f"Loss: {loss.cpu().item():.4f}, "
+                f"Loss: {loss.detach().cpu().item():.4f}, "
                 f"mp: {model.mp.att.beta.round(4)}, "
                 f"sc: {model.sc.inter.beta.round(4)}"
             )

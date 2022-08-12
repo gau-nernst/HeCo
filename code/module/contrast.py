@@ -1,38 +1,73 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+
+
+def contrast(mat: torch.Tensor, pos_idx: torch.Tensor) -> torch.Tensor:
+    pos_values = mat[pos_idx[0], pos_idx[1]]
+    pos_sum_exp = torch.zeros(mat.shape[0], device=mat.device)
+    pos_sum_exp = pos_sum_exp.scatter_add_(0, pos_idx[0], pos_values.exp())
+    loss = -pos_sum_exp.log() + mat.logsumexp(1)
+    return loss.mean()
+
+
+def decoupled_contrast(mat: torch.Tensor, pos_idx: torch.Tensor) -> torch.Tensor:
+    mat_exp = mat.exp()
+    pos_values = mat_exp[pos_idx[0], pos_idx[1]]
+    pos_sum_exp = torch.zeros(mat.shape[0], device=mat.device)
+    pos_sum_exp = pos_sum_exp.scatter_add_(0, pos_idx[0], pos_values)
+    neg_sum_exp = mat_exp.sum(1) - pos_sum_exp
+    loss = -pos_sum_exp.log() + neg_sum_exp.log()
+    return loss.mean()
 
 
 class Contrast(nn.Module):
-    def __init__(self, hidden_dim, tau, lam):
-        super(Contrast, self).__init__()
-        self.proj = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ELU(),
-            nn.Linear(hidden_dim, hidden_dim)
-        )
-        self.tau = tau
+    def __init__(self, dcl: bool, tau: float, lam: float):
+        super().__init__()
+        self.contrast = decoupled_contrast if dcl else contrast
+        self.tau_inv = 1 / tau
         self.lam = lam
-        for model in self.proj:
-            if isinstance(model, nn.Linear):
-                nn.init.xavier_normal_(model.weight, gain=1.414)
 
-    def sim(self, z1, z2):
-        z1_norm = torch.norm(z1, dim=-1, keepdim=True)
-        z2_norm = torch.norm(z2, dim=-1, keepdim=True)
-        dot_numerator = torch.mm(z1, z2.t())
-        dot_denominator = torch.mm(z1_norm, z2_norm.t())
-        sim_matrix = torch.exp(dot_numerator / dot_denominator / self.tau)
-        return sim_matrix
+    def sim(self, z1: torch.Tensor, z2: torch.Tensor) -> torch.Tensor:
+        z1 = F.normalize(z1)
+        z2 = F.normalize(z2)
+        return self.tau_inv * z1 @ z2.t()
 
-    def forward(self, z_mp, z_sc, pos):
-        z_proj_mp = self.proj(z_mp)
-        z_proj_sc = self.proj(z_sc)
-        matrix_mp2sc = self.sim(z_proj_mp, z_proj_sc)
+    def forward(self, z_mp: torch.Tensor, z_sc: torch.Tensor, pos: torch.Tensor) -> torch.Tensor:
+        matrix_mp2sc = self.sim(z_mp, z_sc)
         matrix_sc2mp = matrix_mp2sc.t()
         
-        matrix_mp2sc = matrix_mp2sc/(torch.sum(matrix_mp2sc, dim=1).view(-1, 1) + 1e-8)
-        lori_mp = -torch.log(matrix_mp2sc.mul(pos.to_dense()).sum(dim=-1)).mean()
+        loss_mp = self.contrast(matrix_mp2sc, pos)
+        loss_sc = self.contrast(matrix_sc2mp, pos)
+        return self.lam * loss_mp + (1 - self.lam) * loss_sc
 
-        matrix_sc2mp = matrix_sc2mp / (torch.sum(matrix_sc2mp, dim=1).view(-1, 1) + 1e-8)
-        lori_sc = -torch.log(matrix_sc2mp.mul(pos.to_dense()).sum(dim=-1)).mean()
-        return self.lam * lori_mp + (1 - self.lam) * lori_sc
+
+class ContrastDrop(Contrast):
+    def __init__(self, dcl: bool, tau: float, lam: float, beta1: float, beta2: float):
+        super().__init__(dcl, tau, lam)
+        self.beta1 = beta1
+        self.beta2 = beta2
+
+    def forward(
+        self,
+        z_mp1: torch.Tensor,
+        z_mp2: torch.Tensor,
+        z_sc1: torch.Tensor, 
+        z_sc2: torch.Tensor,
+        pos: torch.Tensor
+    ) -> torch.Tensor:
+        matrix_mp1_sc1 = self.sim(z_mp1, z_sc1)
+        matrix_sc1_mp1 = matrix_mp1_sc1.t()
+
+        matrix_mp1_mp2 = self.sim(z_mp1, z_mp2)
+        matrix_sc1_sc2 = self.sim(z_sc1, z_sc2)
+
+        loss_sc1_mp1 = self.contrast(matrix_sc1_mp1, pos)
+        loss_sc1_sc2 = self.contrast(matrix_sc1_sc2, pos)
+        loss_sc = self.beta1 * loss_sc1_mp1 + (1 - self.beta1) * loss_sc1_sc2
+
+        loss_mp1_sc1 = self.contrast(matrix_mp1_sc1, pos)
+        loss_mp1_mp2 = self.contrast(matrix_mp1_mp2, pos)
+        loss_mp = self.beta2 * loss_mp1_sc1 + (1 - self.beta2) * loss_mp1_mp2
+
+        return self.lam * loss_mp + (1 - self.lam) * loss_sc

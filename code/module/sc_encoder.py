@@ -16,12 +16,13 @@ class inter_att(nn.Module):
         nn.init.xavier_normal_(self.att.data, gain=1.414)
 
         self.softmax = nn.Softmax(dim=0)
-        if attn_drop:
-            self.attn_drop = nn.Dropout(attn_drop)
-        else:
-            self.attn_drop = lambda x: x
+        self.attn_drop = nn.Dropout(attn_drop) if attn_drop > 0 else nn.Identity()
 
     def forward(self, embeds):
+        if len(embeds) == 0:
+            self.beta = np.array([1.])
+            return embeds[0]
+
         beta = []
         attn_curr = self.attn_drop(self.att)
         for embed in embeds:
@@ -29,8 +30,7 @@ class inter_att(nn.Module):
             beta.append(attn_curr.matmul(sp.t()))
         beta = torch.cat(beta, dim=-1).view(-1)
         beta = self.softmax(beta)
-        self.beta = beta.detach().cpu().numpy()
-        # print("sc ", beta.data.cpu().numpy())  # type-level attention
+        self.beta = beta.detach().cpu().numpy() # type-level attention
         z_mc = 0
         for i in range(len(embeds)):
             z_mc += embeds[i] * beta[i]
@@ -42,11 +42,7 @@ class intra_att(nn.Module):
         super(intra_att, self).__init__()
         self.att = nn.Parameter(torch.empty(size=(1, 2*hidden_dim)), requires_grad=True)
         nn.init.xavier_normal_(self.att.data, gain=1.414)
-        if attn_drop:
-            self.attn_drop = nn.Dropout(attn_drop)
-        else:
-            self.attn_drop = lambda x: x
-
+        self.attn_drop = nn.Dropout(attn_drop) if attn_drop > 0 else nn.Identity()
         self.softmax = nn.Softmax(dim=1)
         self.leakyrelu = nn.LeakyReLU()
 
