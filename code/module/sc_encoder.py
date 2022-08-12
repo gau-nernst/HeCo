@@ -1,3 +1,4 @@
+from typing import List
 import numpy as np
 import torch
 import torch.nn as nn
@@ -69,20 +70,19 @@ class Sc_encoder(nn.Module):
         self.sample_rate = sample_rate
         self.nei_num = nei_num
 
-    def forward(self, nei_h, nei_index):
+    def forward(self, nei_h: List[torch.Tensor], nei_index: List[np.ndarray]):
         embeds = []
         for i in range(self.nei_num):
             sele_nei = []
             sample_num = self.sample_rate[i]
+
+            # for this neighbor type, sample 'sample_num' neighbors per target node
             for per_node_nei in nei_index[i]:
-                if len(per_node_nei) >= sample_num:
-                    select_one = torch.tensor(np.random.choice(per_node_nei, sample_num,
-                                                               replace=False))[np.newaxis]
-                else:
-                    select_one = torch.tensor(np.random.choice(per_node_nei, sample_num,
-                                                               replace=True))[np.newaxis]
+                replace = len(per_node_nei) < sample_num
+                select_one = np.random.choice(per_node_nei, sample_num, replace)
                 sele_nei.append(select_one)
-            sele_nei = torch.cat(sele_nei, dim=0).to(nei_h[0].device)
+            sele_nei = torch.from_numpy(np.stack(sele_nei, 0)).to(nei_h[0].device)
+
             one_type_emb = F.elu(self.intra[i](sele_nei, nei_h[i + 1], nei_h[0]))
             embeds.append(one_type_emb)
         z_mc = self.inter(embeds)

@@ -70,8 +70,8 @@ def load_acm(ratio, type_num):
     val = [np.load(path + "val_" + str(i) + ".npy") for i in ratio]
 
     label = th.FloatTensor(label)
-    nei_a = [th.LongTensor(i) for i in nei_a]
-    nei_s = [th.LongTensor(i) for i in nei_s]
+    # nei_a = [th.LongTensor(i) for i in nei_a]
+    # nei_s = [th.LongTensor(i) for i in nei_s]
     feat_p = th.FloatTensor(preprocess_features(feat_p))
     # feat_a = th.FloatTensor(preprocess_features(feat_a))
     # feat_s = th.FloatTensor(preprocess_features(feat_s))
@@ -102,7 +102,7 @@ def load_dblp(ratio, type_num):
     val = [np.load(path + "val_" + str(i) + ".npy") for i in ratio]
     
     label = th.FloatTensor(label)
-    nei_p = [th.LongTensor(i) for i in nei_p]
+    # nei_p = [th.LongTensor(i) for i in nei_p]
     # feat_p = th.FloatTensor(preprocess_features(feat_p))
     feat_a = th.FloatTensor(preprocess_features(feat_a))
     apa = sparse_mx_to_torch_sparse_tensor(normalize_adj(apa))
@@ -135,8 +135,8 @@ def load_aminer(ratio, type_num):
     val = [np.load(path + "val_" + str(i) + ".npy") for i in ratio]
 
     label = th.FloatTensor(label)
-    nei_a = [th.LongTensor(i) for i in nei_a]
-    nei_r = [th.LongTensor(i) for i in nei_r]
+    # nei_a = [th.LongTensor(i) for i in nei_a]
+    # nei_r = [th.LongTensor(i) for i in nei_r]
     # feat_p = th.FloatTensor(preprocess_features(feat_p))
     # feat_a = th.FloatTensor(preprocess_features(feat_a))
     # feat_r = th.FloatTensor(preprocess_features(feat_r))
@@ -172,9 +172,9 @@ def load_freebase(ratio, type_num):
     val = [np.load(path + "val_" + str(i) + ".npy") for i in ratio]
 
     label = th.FloatTensor(label)
-    nei_d = [th.LongTensor(i) for i in nei_d]
-    nei_a = [th.LongTensor(i) for i in nei_a]
-    nei_w = [th.LongTensor(i) for i in nei_w]
+    # nei_d = [th.LongTensor(i) for i in nei_d]
+    # nei_a = [th.LongTensor(i) for i in nei_a]
+    # nei_w = [th.LongTensor(i) for i in nei_w]
     # feat_m = th.FloatTensor(preprocess_features(feat_m))
     # feat_d = th.FloatTensor(preprocess_features(feat_d))
     # feat_a = th.FloatTensor(preprocess_features(feat_a))
