@@ -108,8 +108,8 @@ def evaluate(embeds, ratio, idx_train, idx_val, idx_test, label, nb_classes, dev
     else:
         return np.mean(macro_f1s_val), np.mean(macro_f1s)
 
-    f = open("result_"+dataset+str(ratio)+".txt", "a")
-    f.write(str(np.mean(macro_f1s))+"\t"+str(np.mean(micro_f1s))+"\t"+str(np.mean(auc_score_list))+"\n")
-    f.close()
+    # f = open("result_"+dataset+str(ratio)+".txt", "a")
+    # f.write(str(np.mean(macro_f1s))+"\t"+str(np.mean(micro_f1s))+"\t"+str(np.mean(auc_score_list))+"\n")
+    # f.close()
 
     return np.mean(macro_f1s), np.mean(micro_f1s), np.mean(auc_score_list)

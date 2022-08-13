@@ -134,8 +134,5 @@ def set_params() -> argparse.Namespace:
     if not args.heco_drop:
         args.beta1 = None
         args.beta2 = None
-    
-        if args.dcl:
-            raise NotImplementedError("DCL is not implemented for pure HeCo")
 
     return args
