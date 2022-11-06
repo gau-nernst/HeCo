@@ -1,73 +1,48 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
-
-def contrast(mat: torch.Tensor, pos_idx: torch.Tensor) -> torch.Tensor:
-    pos_values = mat[pos_idx[0], pos_idx[1]]
-    pos_sum_exp = torch.zeros(mat.shape[0], device=mat.device)
-    pos_sum_exp = pos_sum_exp.scatter_add_(0, pos_idx[0], pos_values.exp())
-    loss = -pos_sum_exp.log() + mat.logsumexp(1)
-    return loss.mean()
-
-
-def decoupled_contrast(mat: torch.Tensor, pos_idx: torch.Tensor) -> torch.Tensor:
-    mat_exp = mat.exp()
-    pos_values = mat_exp[pos_idx[0], pos_idx[1]]
-    pos_sum_exp = torch.zeros(mat.shape[0], device=mat.device)
-    pos_sum_exp = pos_sum_exp.scatter_add_(0, pos_idx[0], pos_values)
-    neg_sum_exp = mat_exp.sum(1) - pos_sum_exp
-    loss = -pos_sum_exp.log() + neg_sum_exp.log()
-    return loss.mean()
+from torch import nn, Tensor
 
 
 class Contrast(nn.Module):
-    def __init__(self, dcl: bool, tau: float, lam: float):
+    def __init__(self, hidden_dim: int, loss: nn.Module):
         super().__init__()
-        self.contrast = decoupled_contrast if dcl else contrast
-        self.tau_inv = 1 / tau
-        self.lam = lam
+        self.loss = loss
+        self.proj = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ELU(),
+            nn.Linear(hidden_dim, hidden_dim),
+        )
+        for model in self.proj:
+            if isinstance(model, nn.Linear):
+                nn.init.xavier_normal_(model.weight, gain=1.414)
 
-    def sim(self, z1: torch.Tensor, z2: torch.Tensor) -> torch.Tensor:
-        z1 = F.normalize(z1)
-        z2 = F.normalize(z2)
-        return self.tau_inv * z1 @ z2.t()
-
-    def forward(self, z_mp: torch.Tensor, z_sc: torch.Tensor, pos: torch.Tensor) -> torch.Tensor:
-        matrix_mp2sc = self.sim(z_mp, z_sc)
-        matrix_sc2mp = matrix_mp2sc.t()
-        
-        loss_mp = self.contrast(matrix_mp2sc, pos)
-        loss_sc = self.contrast(matrix_sc2mp, pos)
-        return self.lam * loss_mp + (1 - self.lam) * loss_sc
+    def forward(self, z_mp: Tensor, z_sc: Tensor, pos_mat: Tensor) -> Tensor:
+        z_mp, z_sc = map(self.proj, (z_mp, z_sc))
+        return self.loss(z_mp, z_sc, pos_mat=pos_mat)
 
 
 class ContrastDrop(Contrast):
-    def __init__(self, dcl: bool, tau: float, lam: float, beta1: float, beta2: float):
-        super().__init__(dcl, tau, lam)
+    def __init__(self, hidden_dim: int, loss: nn.Module, beta1: float, beta2: float):
+        assert beta1 + beta2 <= 1
+        super().__init__(hidden_dim, loss)
         self.beta1 = beta1
         self.beta2 = beta2
+        self.beta = 1.0 - beta1 - beta2
 
-    def forward(
-        self,
-        z_mp1: torch.Tensor,
-        z_mp2: torch.Tensor,
-        z_sc1: torch.Tensor, 
-        z_sc2: torch.Tensor,
-        pos: torch.Tensor
-    ) -> torch.Tensor:
-        matrix_mp1_sc1 = self.sim(z_mp1, z_sc1)
-        matrix_sc1_mp1 = matrix_mp1_sc1.t()
+    def forward(self, z_mp1: Tensor, z_mp2: Tensor, z_sc1: Tensor,  z_sc2: Tensor, pos_mat: Tensor) -> Tensor:
+        z_mp1, z_mp2, z_sc1, z_sc2 = map(self.proj, (z_mp1, z_mp2, z_sc1, z_sc2))
 
-        matrix_mp1_mp2 = self.sim(z_mp1, z_mp2)
-        matrix_sc1_sc2 = self.sim(z_sc1, z_sc2)
+        mp_sc_loss = self.loss(z_mp1, z_sc1, pos_mat=pos_mat)
+        mp_loss = self.loss(z_mp1, z_mp2, pos_mat=pos_mat, two_way=False)
+        sc_loss = self.loss(z_sc1, z_sc2, pos_mat=pos_mat, two_way=False)
+        return mp_sc_loss * self.beta + mp_loss * self.beta1 + sc_loss * self.beta2
 
-        loss_sc1_mp1 = self.contrast(matrix_sc1_mp1, pos)
-        loss_sc1_sc2 = self.contrast(matrix_sc1_sc2, pos)
-        loss_sc = self.beta1 * loss_sc1_mp1 + (1 - self.beta1) * loss_sc1_sc2
 
-        loss_mp1_sc1 = self.contrast(matrix_mp1_sc1, pos)
-        loss_mp1_mp2 = self.contrast(matrix_mp1_mp2, pos)
-        loss_mp = self.beta2 * loss_mp1_sc1 + (1 - self.beta2) * loss_mp1_mp2
-
-        return self.lam * loss_mp + (1 - self.lam) * loss_sc
+def build_contrast(contrast_type: str, hidden_dim: int, loss: nn.Module, beta1: float, beta2: float):
+    contrast_mapping = dict(
+        contrast=Contrast,
+        contrast_drop=ContrastDrop,
+    )
+    assert contrast_type in contrast_mapping
+    kwargs = dict(hidden_dim=hidden_dim, loss=loss)
+    if contrast_type == "contrast_drop":
+        kwargs.update(beta1=beta1, beta2=beta2)
+    return contrast_mapping[contrast_type](**kwargs)
