@@ -2,18 +2,20 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .contrast import build_contrast
-from .losses import build_loss
-from .mp_encoder import Mp_encoder
-from .sc_encoder import Sc_encoder
+from .contrast import ContrastDrop
 
 
 class HeCo(nn.Module):
-    def __init__(self, hidden_dim, feats_dim_list, feat_drop, attn_drop, P, sample_rate,
-                 nei_num, temp, loss_type, contrast_type, beta1, beta2):
+    def __init__(
+        self,
+        hidden_dim: int,
+        feats_dim_list: list[int],
+        feat_drop: float,
+        mp_enc: nn.Module,
+        sc_enc: nn.Module,
+        contrast: nn.Module,
+    ):
         super(HeCo, self).__init__()
-        self.hidden_dim = hidden_dim
-        self.contrast_type = contrast_type
         self.fc_list = nn.ModuleList()
         for feats_dim in feats_dim_list:
             fc = nn.Sequential(
@@ -24,11 +26,9 @@ class HeCo(nn.Module):
             nn.init.xavier_normal_(fc[0].weight, gain=1.414)
             self.fc_list.append(fc)
         
-        self.mp = Mp_encoder(P, hidden_dim, attn_drop)
-        self.sc = Sc_encoder(hidden_dim, sample_rate, nei_num, attn_drop)
-
-        loss = build_loss(loss_type, temp, 0)
-        self.contrast = build_contrast(contrast_type, hidden_dim, loss, beta1, beta2)
+        self.mp = mp_enc
+        self.sc = sc_enc
+        self.contrast = contrast
 
     def forward_features(self, feats, mps, nei_index):
         h_all = [fc(feat) for fc, feat in zip(self.fc_list, feats)]
@@ -39,7 +39,7 @@ class HeCo(nn.Module):
     def forward(self, feats, pos, mps, nei_index):  # p a s
         z_mp, z_sc = self.forward_features(feats, mps, nei_index)
         
-        if self.contrast_type == "contrast_drop":
+        if isinstance(self.contrast, ContrastDrop):
             z_mp2, z_sc2 = self.forward_features(feats, mps, nei_index)
             return self.contrast(z_mp, z_mp2, z_sc, z_sc2, pos)
 

@@ -46,7 +46,7 @@ class DCL(InfoNCE):
         
         else:
             numerator_log = (logits + (1.0 - pos_mat) * _NEG_INF).logsumexp(1)
-        
+
         denominator_log = (logits + pos_mat * _NEG_INF).logsumexp(1)
         return (denominator_log - numerator_log).mean()
 
@@ -73,7 +73,7 @@ class ArcFace(nn.Module):
 
     def update_logits(self, logits: Tensor, pos_mat: Optional[Tensor]):
         pos_mat = pos_mat or torch.eye(logits.size(0), device=logits.device)
-        row_idx, col_idx = torch.where(pos_mat)
+        row_idx, col_idx = torch.nonzero(pos_mat, as_tuple=True)
         cos_theta = logits[row_idx, col_idx]
         sin_theta = (1.0 - cos_theta ** 2) ** 0.5    
         cos_theta_m = cos_theta * self.cos_m - sin_theta * self.sin_m

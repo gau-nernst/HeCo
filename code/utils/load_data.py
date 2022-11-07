@@ -1,8 +1,10 @@
 import numpy as np
 import scipy.sparse as sp
-import torch as th
 import torch
+import torch as th
 from sklearn.preprocessing import OneHotEncoder
+
+_RATIOS = [20, 40, 60]
 
 
 def encode_onehot(labels):
@@ -58,7 +60,9 @@ def torch_sparse_eye(n: int):
     )
 
 
-def load_acm(ratio, type_num):
+def load_acm():
+    type_num = [4019, 7167, 60]
+
     # The order of node types: 0 p 1 a 2 s
     path = "../data/acm/"
     label = np.load(path + "labels.npy").astype('int32')
@@ -72,9 +76,9 @@ def load_acm(ratio, type_num):
     pap = sp.load_npz(path + "pap.npz")
     psp = sp.load_npz(path + "psp.npz")
     pos = sp.load_npz(path + "pos.npz")
-    train = [np.load(path + "train_" + str(i) + ".npy") for i in ratio]
-    test = [np.load(path + "test_" + str(i) + ".npy") for i in ratio]
-    val = [np.load(path + "val_" + str(i) + ".npy") for i in ratio]
+    train = [np.load(path + "train_" + str(i) + ".npy") for i in _RATIOS]
+    test = [np.load(path + "test_" + str(i) + ".npy") for i in _RATIOS]
+    val = [np.load(path + "val_" + str(i) + ".npy") for i in _RATIOS]
 
     label = th.FloatTensor(label)
     # nei_a = [th.LongTensor(i) for i in nei_a]
@@ -84,15 +88,17 @@ def load_acm(ratio, type_num):
     # feat_s = th.FloatTensor(preprocess_features(feat_s))
     pap = sparse_mx_to_torch_sparse_tensor(normalize_adj(pap))
     psp = sparse_mx_to_torch_sparse_tensor(normalize_adj(psp))
-    # pos = sparse_mx_to_torch_sparse_tensor(pos)
-    pos = scipy_sparse_to_torch_edge_indices(pos)
+    pos = sparse_mx_to_torch_sparse_tensor(pos).to_dense()
+    # pos = scipy_sparse_to_torch_edge_indices(pos)
     train = [th.LongTensor(i) for i in train]
     val = [th.LongTensor(i) for i in val]
     test = [th.LongTensor(i) for i in test]
     return [nei_a, nei_s], [feat_p, feat_a, feat_s], [pap, psp], pos, label, train, val, test
 
 
-def load_dblp(ratio, type_num):
+def load_dblp():
+    type_num = [4057, 14328, 7723, 20]
+
     # The order of node types: 0 a 1 p 2 c 3 t
     path = "../data/dblp/"
     label = np.load(path + "labels.npy").astype('int32')
@@ -105,9 +111,9 @@ def load_dblp(ratio, type_num):
     apcpa = sp.load_npz(path + "apcpa.npz")
     aptpa = sp.load_npz(path + "aptpa.npz")
     pos = sp.load_npz(path + "pos.npz")
-    train = [np.load(path + "train_" + str(i) + ".npy") for i in ratio]
-    test = [np.load(path + "test_" + str(i) + ".npy") for i in ratio]
-    val = [np.load(path + "val_" + str(i) + ".npy") for i in ratio]
+    train = [np.load(path + "train_" + str(i) + ".npy") for i in _RATIOS]
+    test = [np.load(path + "test_" + str(i) + ".npy") for i in _RATIOS]
+    val = [np.load(path + "val_" + str(i) + ".npy") for i in _RATIOS]
     
     label = th.FloatTensor(label)
     # nei_p = [th.LongTensor(i) for i in nei_p]
@@ -116,15 +122,17 @@ def load_dblp(ratio, type_num):
     apa = sparse_mx_to_torch_sparse_tensor(normalize_adj(apa))
     apcpa = sparse_mx_to_torch_sparse_tensor(normalize_adj(apcpa))
     aptpa = sparse_mx_to_torch_sparse_tensor(normalize_adj(aptpa))
-    # pos = sparse_mx_to_torch_sparse_tensor(pos)
-    pos = scipy_sparse_to_torch_edge_indices(pos)
+    pos = sparse_mx_to_torch_sparse_tensor(pos).to_dense()
+    # pos = scipy_sparse_to_torch_edge_indices(pos)
     train = [th.LongTensor(i) for i in train]
     val = [th.LongTensor(i) for i in val]
     test = [th.LongTensor(i) for i in test]
     return [nei_p], [feat_a, feat_p], [apa, apcpa, aptpa], pos, label, train, val, test
 
 
-def load_aminer(ratio, type_num):
+def load_aminer():
+    type_num = [6564, 13329, 35890]
+
     # The order of node types: 0 p 1 a 2 r
     path = "../data/aminer/"
     label = np.load(path + "labels.npy").astype('int32')
@@ -139,9 +147,9 @@ def load_aminer(ratio, type_num):
     pap = sp.load_npz(path + "pap.npz")
     prp = sp.load_npz(path + "prp.npz")
     pos = sp.load_npz(path + "pos.npz")
-    train = [np.load(path + "train_" + str(i) + ".npy") for i in ratio]
-    test = [np.load(path + "test_" + str(i) + ".npy") for i in ratio]
-    val = [np.load(path + "val_" + str(i) + ".npy") for i in ratio]
+    train = [np.load(path + "train_" + str(i) + ".npy") for i in _RATIOS]
+    test = [np.load(path + "test_" + str(i) + ".npy") for i in _RATIOS]
+    val = [np.load(path + "val_" + str(i) + ".npy") for i in _RATIOS]
 
     label = th.FloatTensor(label)
     # nei_a = [th.LongTensor(i) for i in nei_a]
@@ -151,15 +159,17 @@ def load_aminer(ratio, type_num):
     # feat_r = th.FloatTensor(preprocess_features(feat_r))
     pap = sparse_mx_to_torch_sparse_tensor(normalize_adj(pap))
     prp = sparse_mx_to_torch_sparse_tensor(normalize_adj(prp))
-    # pos = sparse_mx_to_torch_sparse_tensor(pos)
-    pos = scipy_sparse_to_torch_edge_indices(pos)
+    pos = sparse_mx_to_torch_sparse_tensor(pos).to_dense()
+    # pos = scipy_sparse_to_torch_edge_indices(pos)
     train = [th.LongTensor(i) for i in train]
     val = [th.LongTensor(i) for i in val]
     test = [th.LongTensor(i) for i in test]
     return [nei_a, nei_r], [feat_p, feat_a, feat_r], [pap, prp], pos, label, train, val, test
 
 
-def load_freebase(ratio, type_num):
+def load_freebase():
+    type_num = [3492, 2502, 33401, 4459]
+
     # The order of node types: 0 m 1 d 2 a 3 w
     path = "../data/freebase/"
     label = np.load(path + "labels.npy").astype('int32')
@@ -177,9 +187,9 @@ def load_freebase(ratio, type_num):
     mdm = sp.load_npz(path + "mdm.npz")
     mwm = sp.load_npz(path + "mwm.npz")
     pos = sp.load_npz(path + "pos.npz")
-    train = [np.load(path + "train_" + str(i) + ".npy") for i in ratio]
-    test = [np.load(path + "test_" + str(i) + ".npy") for i in ratio]
-    val = [np.load(path + "val_" + str(i) + ".npy") for i in ratio]
+    train = [np.load(path + "train_" + str(i) + ".npy") for i in _RATIOS]
+    test = [np.load(path + "test_" + str(i) + ".npy") for i in _RATIOS]
+    val = [np.load(path + "val_" + str(i) + ".npy") for i in _RATIOS]
 
     label = th.FloatTensor(label)
     # nei_d = [th.LongTensor(i) for i in nei_d]
@@ -192,21 +202,18 @@ def load_freebase(ratio, type_num):
     mam = sparse_mx_to_torch_sparse_tensor(normalize_adj(mam))
     mdm = sparse_mx_to_torch_sparse_tensor(normalize_adj(mdm))
     mwm = sparse_mx_to_torch_sparse_tensor(normalize_adj(mwm))
-    # pos = sparse_mx_to_torch_sparse_tensor(pos)
-    pos = scipy_sparse_to_torch_edge_indices(pos)
+    pos = sparse_mx_to_torch_sparse_tensor(pos).to_dense()
+    # pos = scipy_sparse_to_torch_edge_indices(pos)
     train = [th.LongTensor(i) for i in train]
     val = [th.LongTensor(i) for i in val]
     test = [th.LongTensor(i) for i in test]
     return [nei_d, nei_a, nei_w], [feat_m, feat_d, feat_a, feat_w], [mdm, mam, mwm], pos, label, train, val, test
 
 
-def load_data(dataset, ratio, type_num):
-    if dataset == "acm":
-        data = load_acm(ratio, type_num)
-    elif dataset == "dblp":
-        data = load_dblp(ratio, type_num)
-    elif dataset == "aminer":
-        data = load_aminer(ratio, type_num)
-    elif dataset == "freebase":
-        data = load_freebase(ratio, type_num)
-    return data
+def load_data(dataset):
+    return dict(
+        acm=load_acm,
+        dblp=load_dblp,
+        aminer=load_aminer,
+        freebase=load_freebase,
+    )[dataset]()

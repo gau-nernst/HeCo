@@ -1,4 +1,5 @@
 from typing import List
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -59,20 +60,17 @@ class intra_att(nn.Module):
 
 
 class Sc_encoder(nn.Module):
-    def __init__(self, hidden_dim, sample_rate, nei_num, attn_drop):
+    def __init__(self, hidden_dim, sample_rate, attn_drop):
         super(Sc_encoder, self).__init__()
-        self.intra = nn.ModuleList([intra_att(hidden_dim, attn_drop) for _ in range(nei_num)])
+        self.intra = nn.ModuleList([intra_att(hidden_dim, attn_drop) for _ in range(len(sample_rate))])
         self.inter = inter_att(hidden_dim, attn_drop)
         self.sample_rate = sample_rate
-        self.nei_num = nei_num
 
     def forward(self, nei_h: List[torch.Tensor], nei_index: List[np.ndarray]):
         embeds = []
-        for i in range(self.nei_num):
+        # for each neighbor type, sample 'sample_num' neighbors per target node
+        for i, sample_num in enumerate(self.sample_rate):
             sele_nei = []
-            sample_num = self.sample_rate[i]
-
-            # for this neighbor type, sample 'sample_num' neighbors per target node
             for per_node_nei in nei_index[i]:
                 replace = len(per_node_nei) < sample_num
                 select_one = np.random.choice(per_node_nei, sample_num, replace)

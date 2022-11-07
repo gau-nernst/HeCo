@@ -1,18 +1,41 @@
 import numpy as np
 import torch
-from .logreg import LogReg
-import torch.nn as nn
-from sklearn.metrics import f1_score
-from torch.nn.functional import softmax
-from sklearn.metrics import roc_auc_score
+from sklearn.cluster import KMeans
+from sklearn.metrics import (adjusted_rand_score, f1_score,
+                             normalized_mutual_info_score, roc_auc_score)
+from torch import nn
+
+from .load_data import _RATIOS
 
 
-##################################################
-# This section of code adapted from pcy1302/DMGI #
-##################################################
+class LogReg(nn.Linear):
+    def __init__(self, embed_dim, num_classes):
+        super().__init__(embed_dim, num_classes)
+    
+    def reset_parameters(self):
+        nn.init.xavier_uniform_(self.weight)
+        nn.init.zeros_(self.bias)
 
-def evaluate(embeds, ratio, idx_train, idx_val, idx_test, label, nb_classes, device, dataset, lr, wd
-             , isTest=True):
+
+def evalulate_embeddings(args, embeds, label, idx_train, idx_val, idx_test):
+    metrics = {}
+    for ratio, i_train, i_val, i_test in zip(_RATIOS, idx_train, idx_val, idx_test):
+        f1_macro, f1_micro, auc = evaluate_classification(embeds, i_train, i_val, i_test, label,
+                 args.eva_lr, args.eva_wd)
+        metrics[f"f1_macro_{ratio}"] = f1_macro
+        metrics[f"f1_micro_{ratio}"] = f1_micro
+        metrics[f"auc_{ratio}"] = auc
+
+    embeds = embeds.cpu().numpy()
+    label = np.argmax(label.cpu().numpy(), axis=-1)
+    nmi, ari = evaluate_clustering(embeds, label)
+    metrics["nmi"] = nmi
+    metrics["ari"] = ari
+
+    return metrics
+
+
+def evaluate_classification(embeds, idx_train, idx_val, idx_test, label, lr, wd):
     hid_units = embeds.shape[1]
     xent = nn.CrossEntropyLoss()
 
@@ -29,10 +52,9 @@ def evaluate(embeds, ratio, idx_train, idx_val, idx_test, label, nb_classes, dev
     macro_f1s_val = []
     auc_score_list = []
 
-    for _ in range(50):
-        log = LogReg(hid_units, nb_classes)
+    for _ in range(20):
+        log = LogReg(hid_units, label.shape[-1]).to(embeds.device)
         opt = torch.optim.Adam(log.parameters(), lr=lr, weight_decay=wd)
-        log.to(device)
 
         val_accs = []
         test_accs = []
@@ -66,8 +88,9 @@ def evaluate(embeds, ratio, idx_train, idx_val, idx_test, label, nb_classes, dev
             val_micro_f1s.append(val_f1_micro)
 
             # test
-            logits = log(test_embs)
-            preds = torch.argmax(logits, dim=1)
+            with torch.no_grad():
+                logits = log(test_embs)
+                preds = torch.argmax(logits, dim=1)
 
             test_acc = torch.sum(preds == test_lbls).float() / test_lbls.shape[0]
             test_f1_macro = f1_score(test_lbls.cpu(), preds.cpu(), average='macro')
@@ -89,27 +112,33 @@ def evaluate(embeds, ratio, idx_train, idx_val, idx_test, label, nb_classes, dev
 
         # auc
         best_logits = logits_list[max_iter]
-        best_proba = softmax(best_logits, dim=1)
-        auc_score_list.append(roc_auc_score(y_true=test_lbls.detach().cpu().numpy(),
-                                            y_score=best_proba.detach().cpu().numpy(),
-                                            multi_class='ovr'
-                                            ))
+        best_proba = torch.softmax(best_logits, dim=1)
+        auc_score = roc_auc_score(test_lbls.cpu(), best_proba.cpu(), multi_class='ovr')
+        auc_score_list.append(auc_score)
 
-    if isTest:
-        print("\t[Classification] Macro-F1_mean: {:.4f} var: {:.4f}  Micro-F1_mean: {:.4f} var: {:.4f} auc {:.4f}"
-              .format(np.mean(macro_f1s),
-                      np.std(macro_f1s),
-                      np.mean(micro_f1s),
-                      np.std(micro_f1s),
-                      np.mean(auc_score_list),
-                      np.std(auc_score_list)
-                      )
-              )
-    else:
-        return np.mean(macro_f1s_val), np.mean(macro_f1s)
+    macro_f1_mean, macro_f1_std = np.mean(macro_f1s), np.std(macro_f1s)
+    micro_f1_mean, micro_f1_std = np.mean(micro_f1s), np.std(micro_f1s)
+    auc_mean, auc_std = np.mean(auc_score_list), np.std(auc_score_list)
+    msg = (
+        "\t[Classification] "
+        f"Macro-F1: {macro_f1_mean * 100:.4f} std: {macro_f1_std * 100:.4f} "
+        f"Micro-F1: {micro_f1_mean * 100:.4f} std: {micro_f1_std * 100:.4f} "
+        f"AUC: {auc_mean * 100:.4f} std: {auc_std * 100:.4f}"
+    )
+    print(msg)
+    return macro_f1_mean, micro_f1_mean, auc_mean
 
-    # f = open("result_"+dataset+str(ratio)+".txt", "a")
-    # f.write(str(np.mean(macro_f1s))+"\t"+str(np.mean(micro_f1s))+"\t"+str(np.mean(auc_score_list))+"\n")
-    # f.close()
 
-    return np.mean(macro_f1s), np.mean(micro_f1s), np.mean(auc_score_list)
+# https://github.com/liun-online/HeCo/issues/1
+def evaluate_clustering(embeds, y):
+    nmis, aris = [], []
+    for _ in range(20):
+        Y_pred = KMeans(y.max() + 1).fit_predict(embeds)
+        nmi = normalized_mutual_info_score(y, Y_pred)
+        ari = adjusted_rand_score(y, Y_pred)
+        nmis.append(nmi)
+        aris.append(ari)
+    nmi_mean, nmi_std = np.mean(nmis), np.std(nmis, ddof=1)
+    ari_mean, ari_std = np.mean(aris), np.std(aris, ddof=1)
+    print(f"\t[Clustering] NMI: {nmi_mean*100:.4f} std: {nmi_std*100:.4f} ARI: {ari_mean*100:.4f} std: {ari_std*100:.4f}")
+    return nmi_mean, ari_mean
