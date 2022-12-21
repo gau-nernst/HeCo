@@ -1,5 +1,6 @@
 import math
 from typing import Optional
+import random
 
 import torch
 import torch.nn.functional as F
@@ -54,6 +55,7 @@ class DCL(InfoNCE):
 # https://github.com/deepinsight/insightface/blob/master/recognition/arcface_torch/losses.py
 class ArcFace(nn.Module):
     def __init__(self, temp: float, margin: float):
+        assert margin < 0.5 * math.pi
         super().__init__()
         self.t_inv = 1.0 / temp
         self.cos_m = math.cos(margin)
@@ -72,7 +74,8 @@ class ArcFace(nn.Module):
         return loss
 
     def update_logits(self, logits: Tensor, pos_mat: Optional[Tensor]):
-        pos_mat = pos_mat or torch.eye(logits.size(0), device=logits.device)
+        if pos_mat is None:
+            pos_mat = torch.eye(logits.size(0), device=logits.device)
         row_idx, col_idx = torch.nonzero(pos_mat, as_tuple=True)
         cos_theta = logits[row_idx, col_idx]
         sin_theta = (1.0 - cos_theta ** 2) ** 0.5    
@@ -81,7 +84,28 @@ class ArcFace(nn.Module):
         # if cos(theta) > cos(pi - margin), use cos(theta + m), else use cos(theta) - sin(pi - margin) * margin
         # https://github.com/deepinsight/insightface/issues/2126
         new_logits = torch.where(cos_theta > self.threshold, cos_theta_m, cos_theta - self.sinmm)
-        return torch.where(pos_mat, new_logits, logits)
+        logits[row_idx, col_idx] = new_logits
+        return logits
+
+
+class Triplet(nn.Module):
+    def __init__(self, margin: float):
+        super().__init__()
+        # self.triplet = nn.TripletMarginLoss(margin=margin)
+        self.triplet = nn.TripletMarginWithDistanceLoss(distance_function=F.cosine_similarity, margin=margin)
+    
+    def forward(self, x1: Tensor, x2: Tensor, pos_mat: Optional[Tensor] = None, two_way: bool = True):
+        loss = self.forward_once(x1, x2, pos_mat)
+        if two_way:
+            loss = (loss + self.forward_once(x2, x1, pos_mat)) * 0.5
+        return loss
+
+    def forward_once(self, x1: Tensor, x2: Tensor, pos_mat: Optional[Tensor] = None):
+        loss = 0
+        indices = random.sample(range(x1.shape[0]), 100)
+        for i in indices:
+            loss = loss + self.triplet(x1, x2, x2.roll(i, dims=0))
+        return loss / x1.shape[0]
 
 
 def build_loss(name: str, temp: float, margin: float):
@@ -89,9 +113,12 @@ def build_loss(name: str, temp: float, margin: float):
         info_nce=InfoNCE,
         dcl=DCL,
         arcface=ArcFace,
+        triplet=Triplet,
     )
     assert name in loss_mapping
-    kwargs = dict(temp=temp)
-    if name == "arcface":
+    kwargs = dict()
+    if name in ("info_nce", "dcl", "arcface"):
+        kwargs.update(temp=temp)
+    if name in ("arcface", "triplet"):
         kwargs.update(margin=margin)
     return loss_mapping[name](**kwargs)
