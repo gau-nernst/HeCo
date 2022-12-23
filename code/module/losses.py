@@ -1,6 +1,5 @@
 import math
 from typing import Optional
-import random
 
 import torch
 import torch.nn.functional as F
@@ -91,21 +90,17 @@ class ArcFace(nn.Module):
 class Triplet(nn.Module):
     def __init__(self, margin: float):
         super().__init__()
-        # self.triplet = nn.TripletMarginLoss(margin=margin)
-        self.triplet = nn.TripletMarginWithDistanceLoss(distance_function=F.cosine_similarity, margin=margin)
+        self.margin = margin
     
     def forward(self, x1: Tensor, x2: Tensor, pos_mat: Optional[Tensor] = None, two_way: bool = True):
-        loss = self.forward_once(x1, x2, pos_mat)
+        x1_x2 = sim(x1, x2)
+        pos = x1_x2.diag().view(-1, 1)
+        loss = F.relu(pos - x1_x2 + self.margin).sum(1).div(x1.shape[0] - 1).mean()
         if two_way:
-            loss = (loss + self.forward_once(x2, x1, pos_mat)) * 0.5
+            x2_x1 = x1_x2.t()
+            loss2 = F.relu(pos - x2_x1 + self.margin).sum(1).div(x1.shape[0] - 1).mean()
+            loss = (loss + loss2) * 0.5
         return loss
-
-    def forward_once(self, x1: Tensor, x2: Tensor, pos_mat: Optional[Tensor] = None):
-        loss = 0
-        indices = random.sample(range(x1.shape[0]), 100)
-        for i in indices:
-            loss = loss + self.triplet(x1, x2, x2.roll(i, dims=0))
-        return loss / x1.shape[0]
 
 
 def build_loss(name: str, temp: float, margin: float):
