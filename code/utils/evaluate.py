@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+from sklearn.preprocessing import normalize
 from sklearn.cluster import KMeans
 from sklearn.metrics import (adjusted_rand_score, f1_score,
                              normalized_mutual_info_score, roc_auc_score)
@@ -17,25 +18,30 @@ class LogReg(nn.Linear):
         nn.init.zeros_(self.bias)
 
 
-def evalulate_embeddings(args, embeds, label, idx_train, idx_val, idx_test):
+def evalulate_embeddings(args, embeds, label, idx_train, idx_val, idx_test, verbose=True):
     metrics = {}
     for ratio, i_train, i_val, i_test in zip(_RATIOS, idx_train, idx_val, idx_test):
         f1_macro, f1_micro, auc = evaluate_classification(embeds, i_train, i_val, i_test, label,
-                 args.eva_lr, args.eva_wd)
+                 args.eva_lr, args.eva_wd, verbose=verbose)
         metrics[f"f1_macro_{ratio}"] = f1_macro
         metrics[f"f1_micro_{ratio}"] = f1_micro
         metrics[f"auc_{ratio}"] = auc
 
     embeds = embeds.cpu().numpy()
     label = np.argmax(label.cpu().numpy(), axis=-1)
-    nmi, ari = evaluate_clustering(embeds, label)
-    metrics["nmi"] = nmi
-    metrics["ari"] = ari
+    nmi, ari = evaluate_clustering(embeds, label, verbose=verbose)
+    metrics["nmi_l2"] = nmi
+    metrics["ari_l2"] = ari
+
+    embeds = normalize(embeds)
+    nmi, ari = evaluate_clustering(embeds, label, verbose=verbose)
+    metrics["nmi_cosine"] = nmi
+    metrics["ari_cosine"] = ari
 
     return metrics
 
 
-def evaluate_classification(embeds, idx_train, idx_val, idx_test, label, lr, wd):
+def evaluate_classification(embeds, idx_train, idx_val, idx_test, label, lr, wd, verbose=True):
     hid_units = embeds.shape[1]
     xent = nn.CrossEntropyLoss()
 
@@ -119,18 +125,19 @@ def evaluate_classification(embeds, idx_train, idx_val, idx_test, label, lr, wd)
     macro_f1_mean, macro_f1_std = np.mean(macro_f1s), np.std(macro_f1s)
     micro_f1_mean, micro_f1_std = np.mean(micro_f1s), np.std(micro_f1s)
     auc_mean, auc_std = np.mean(auc_score_list), np.std(auc_score_list)
-    msg = (
-        "\t[Classification] "
-        f"Macro-F1: {macro_f1_mean * 100:.4f} std: {macro_f1_std * 100:.4f} "
-        f"Micro-F1: {micro_f1_mean * 100:.4f} std: {micro_f1_std * 100:.4f} "
-        f"AUC: {auc_mean * 100:.4f} std: {auc_std * 100:.4f}"
-    )
-    print(msg)
+    if verbose:
+        msg = (
+            "\t[Classification] "
+            f"Macro-F1: {macro_f1_mean * 100:.4f} std: {macro_f1_std * 100:.4f} "
+            f"Micro-F1: {micro_f1_mean * 100:.4f} std: {micro_f1_std * 100:.4f} "
+            f"AUC: {auc_mean * 100:.4f} std: {auc_std * 100:.4f}"
+        )
+        print(msg)
     return macro_f1_mean, micro_f1_mean, auc_mean
 
 
 # https://github.com/liun-online/HeCo/issues/1
-def evaluate_clustering(embeds, y):
+def evaluate_clustering(embeds, y, verbose=True):
     nmis, aris = [], []
     for _ in range(20):
         Y_pred = KMeans(y.max() + 1).fit_predict(embeds)
@@ -140,5 +147,6 @@ def evaluate_clustering(embeds, y):
         aris.append(ari)
     nmi_mean, nmi_std = np.mean(nmis), np.std(nmis, ddof=1)
     ari_mean, ari_std = np.mean(aris), np.std(aris, ddof=1)
-    print(f"\t[Clustering] NMI: {nmi_mean*100:.4f} std: {nmi_std*100:.4f} ARI: {ari_mean*100:.4f} std: {ari_std*100:.4f}")
+    if verbose:
+        print(f"\t[Clustering] NMI: {nmi_mean*100:.4f} std: {nmi_std*100:.4f} ARI: {ari_mean*100:.4f} std: {ari_std*100:.4f}")
     return nmi_mean, ari_mean

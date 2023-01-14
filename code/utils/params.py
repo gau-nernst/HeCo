@@ -27,12 +27,15 @@ def get_parser():
     parser.add_argument("--sample_rate", nargs="+", type=int)   # used in sc_encoder
 
     # contrastive learning
-    parser.add_argument("--loss_type", default="info_nce", choices=["info_nce", "dcl", "arcface"])
+    parser.add_argument("--loss_type", default="info_nce", choices=["info_nce", "dcl", "arcface", "triplet"])
     parser.add_argument("--contrast_type", default="contrast", choices=["contrast", "contrast_drop"])
     parser.add_argument("--temp", type=float)
-    parser.add_argument("--margin", type=float, default=0.0)
-    parser.add_argument("--beta1", type=float, default=0.5)
-    parser.add_argument("--beta2", type=float, default=0.5)
+    parser.add_argument("--margin", type=float, default=0.0)    # for arcface and triplet loss
+    parser.add_argument("--beta1", type=float, default=0.25)
+    parser.add_argument("--beta2", type=float, default=0.25)
+
+    parser.add_argument("--disable_logging", action="store_true")
+    parser.add_argument("--log_name")
 
     return parser
 
