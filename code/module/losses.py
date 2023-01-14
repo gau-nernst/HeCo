@@ -67,7 +67,10 @@ class ArcFace(nn.Module):
         new_x1_x2 = self.update_logits(x1_x2, pos_mat) * self.t_inv
         loss = InfoNCE.forward_logits(new_x1_x2, pos_mat)
         if two_way:
-            new_x2_x1 = new_x1_x2.t() if pos_mat is None else self.update_logits(x1_x2.t(), pos_mat) * self.t_inv
+            if pos_mat is None:
+                new_x2_x1 = new_x1_x2.t()
+            else:
+                new_x2_x1 = self.update_logits(x1_x2.t(), pos_mat) * self.t_inv
             loss2 = InfoNCE.forward_logits(new_x2_x1, pos_mat)
             loss = (loss + loss2) * 0.5
         return loss
@@ -93,12 +96,23 @@ class Triplet(nn.Module):
         self.margin = margin
     
     def forward(self, x1: Tensor, x2: Tensor, pos_mat: Optional[Tensor] = None, two_way: bool = True):
+        n = x1.shape[0]
         x1_x2 = sim(x1, x2)
-        pos = x1_x2.diag().view(-1, 1)
-        loss = F.relu(pos - x1_x2 + self.margin).sum(1).div(x1.shape[0] - 1).mean()
+
+        if pos_mat is None:
+            pos_mat = torch.eye(n, device=x1.device, dtype=torch.bool)
+        else:
+            pos_mat = pos_mat.bool()
+        
+        pos = x1_x2[pos_mat].view(n, -1, 1)  # (n, num_pos, 1). this only works because num_pos is constant across nodes
+        neg = x1_x2[~pos_mat].view(n, 1, -1)  # (n, 1, num_neg)
+        loss = F.relu(pos - neg + self.margin).mean()  # before mean: (n, num_pos, num_neg)
+        
         if two_way:
             x2_x1 = x1_x2.t()
-            loss2 = F.relu(pos - x2_x1 + self.margin).sum(1).div(x1.shape[0] - 1).mean()
+            pos = x2_x1[pos_mat].view(n, -1, 1)
+            neg = x2_x1[~pos_mat].view(n, 1, -1)
+            loss2 = F.relu(pos - neg + self.margin).mean()
             loss = (loss + loss2) * 0.5
         return loss
 
