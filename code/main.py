@@ -1,14 +1,12 @@
 import argparse
 import random
 from copy import deepcopy
-import json
-import datetime
 import itertools
 
 import numpy as np
 import torch
-from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+import wandb
 
 from module import HeCo, Mp_encoder, Sc_encoder, build_contrast, build_loss
 from utils import evalulate_embeddings, load_data, set_params
@@ -53,14 +51,11 @@ def main(args: argparse.Namespace):
     
     logger = None
     if not args.disable_logging:
-        now = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        logdir = f"runs/{args.dataset}/{now}"
-        if args.log_name is not None:
-            logdir += f"_{args.log_name}"
-        logger = SummaryWriter(log_dir=logdir)
-        hparams = deepcopy(vars(args))
-        hparams = {k: json.dumps(v) if isinstance(v, list) else v for k, v in hparams.items()}
-        logger.add_hparams(hparams, dict())
+        logger = wandb.init(
+            project="heco",
+            name=f"{args.dataset}_{args.log_name}",
+            config=vars(args),
+        )
 
     device = args.device
     nei_index, feats, mps, pos, label, idx_train, idx_val, idx_test = get_data(args)
@@ -76,16 +71,18 @@ def main(args: argparse.Namespace):
     model = HeCo(
         args.hidden_dim,
         feats_dim_list,
+        args.multi_positive,
         args.feat_drop,
         mp_enc,
         sc_enc,
         contrast,
-    ).to(device)
+    )
+    model = model.to(device)
     optimiser = torch.optim.Adam(
         model.parameters(),
         lr=args.lr,
         weight_decay=args.l2_coef,
-        betas=(0, 0.999)
+        betas=(args.adam_beta1, 0.999)
     )
 
 
@@ -97,19 +94,18 @@ def main(args: argparse.Namespace):
 
         loss_item = loss.item()
         if logger is not None:
-            logger.add_scalar("loss", loss_item, epoch)
-            logger.add_scalar("lr", optimiser.param_groups[0]["lr"], epoch)
+            log_dict = dict(loss=loss_item, lr=optimiser.param_groups[0]["lr"])
             for i, x in enumerate(model.mp.att.beta):
-                logger.add_scalar(f"mp/{i}", x, epoch)
+                log_dict[f"mp/{i}"] = x
             for i, x in enumerate(model.sc.inter.beta):
-                logger.add_scalar(f"sc/{i}", x, epoch)
+                log_dict[f"sc/{i}"] = x
+            logger.log(log_dict, step=epoch)
 
         if epoch % 100 == 0:
             embeds = model.get_embeds(feats, mps)
             metrics = evalulate_embeddings(args, embeds, label, idx_train, idx_val, idx_test, verbose=False)
             if logger is not None:
-                for k, v in metrics.items():
-                    logger.add_scalar(k.replace("_", "/"), v, epoch)
+                logger.log(metrics, step=epoch)
 
         if loss_item < best:
             best, best_t = loss_item, epoch
@@ -129,9 +125,8 @@ def main(args: argparse.Namespace):
     embeds = model.get_embeds(feats, mps)
     metrics = evalulate_embeddings(args, embeds, label, idx_train, idx_val, idx_test)
     if logger is not None:
-        for k, v in metrics.items():
-            logger.add_scalar(k.replace("_", "/"), v, best_t)
-        logger.flush()
+        logger.log(metrics, step=best_t)
+        logger.finish()
 
 
 if __name__ == '__main__':

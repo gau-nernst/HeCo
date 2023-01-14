@@ -19,6 +19,7 @@ def get_parser():
     parser.add_argument("--patience", type=int)
     parser.add_argument("--lr", type=float)
     parser.add_argument("--l2_coef", type=float)
+    parser.add_argument("--adam_beta1", type=float, default=0.9)
 
     # model parameter
     parser.add_argument("--hidden_dim", type=int, default=64)
@@ -27,6 +28,7 @@ def get_parser():
     parser.add_argument("--sample_rate", nargs="+", type=int)   # used in sc_encoder
 
     # contrastive learning
+    parser.add_argument("--multi_positive", action="store_true")
     parser.add_argument("--loss_type", default="info_nce", choices=["info_nce", "dcl", "arcface", "triplet"])
     parser.add_argument("--contrast_type", default="contrast", choices=["contrast", "contrast_drop"])
     parser.add_argument("--temp", type=float)

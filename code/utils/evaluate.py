@@ -23,20 +23,20 @@ def evalulate_embeddings(args, embeds, label, idx_train, idx_val, idx_test, verb
     for ratio, i_train, i_val, i_test in zip(_RATIOS, idx_train, idx_val, idx_test):
         f1_macro, f1_micro, auc = evaluate_classification(embeds, i_train, i_val, i_test, label,
                  args.eva_lr, args.eva_wd, verbose=verbose)
-        metrics[f"f1_macro_{ratio}"] = f1_macro
-        metrics[f"f1_micro_{ratio}"] = f1_micro
-        metrics[f"auc_{ratio}"] = auc
+        metrics[f"f1_macro/{ratio}"] = f1_macro
+        metrics[f"f1_micro/{ratio}"] = f1_micro
+        metrics[f"auc/{ratio}"] = auc
 
     embeds = embeds.cpu().numpy()
     label = np.argmax(label.cpu().numpy(), axis=-1)
     nmi, ari = evaluate_clustering(embeds, label, verbose=verbose)
-    metrics["nmi_l2"] = nmi
-    metrics["ari_l2"] = ari
+    metrics["nmi/l2"] = nmi
+    metrics["ari/l2"] = ari
 
     embeds = normalize(embeds)
     nmi, ari = evaluate_clustering(embeds, label, verbose=verbose)
-    metrics["nmi_cosine"] = nmi
-    metrics["ari_cosine"] = ari
+    metrics["nmi/cosine"] = nmi
+    metrics["ari/cosine"] = ari
 
     return metrics
 

@@ -10,6 +10,7 @@ class HeCo(nn.Module):
         self,
         hidden_dim: int,
         feats_dim_list: list[int],
+        multi_positive: bool,
         feat_drop: float,
         mp_enc: nn.Module,
         sc_enc: nn.Module,
@@ -29,6 +30,7 @@ class HeCo(nn.Module):
         self.mp = mp_enc
         self.sc = sc_enc
         self.contrast = contrast
+        self.multi_positive = multi_positive
 
     def forward_features(self, feats, mps, nei_index):
         h_all = [fc(feat) for fc, feat in zip(self.fc_list, feats)]
@@ -37,6 +39,8 @@ class HeCo(nn.Module):
         return z_mp, z_sc
 
     def forward(self, feats, pos, mps, nei_index):  # p a s
+        if not self.multi_positive:
+            pos = None
         z_mp, z_sc = self.forward_features(feats, mps, nei_index)
         
         if isinstance(self.contrast, ContrastDrop):
