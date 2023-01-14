@@ -1,13 +1,21 @@
 import argparse
 import random
 from copy import deepcopy
+import json
+import datetime
+import itertools
 
 import numpy as np
 import torch
 from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
 
 from module import HeCo, Mp_encoder, Sc_encoder, build_contrast, build_loss
 from utils import evalulate_embeddings, load_data, set_params
+
+
+torch.backends.cuda.matmul.allow_tf32 = False
+torch.backends.cudnn.allow_tf32 = False
 
 
 def seed_everything(seed):
@@ -40,7 +48,19 @@ def get_data(args):
 
 
 def main(args: argparse.Namespace):
-    logger = SummaryWriter()
+    if args.seed is not None:
+        seed_everything(args.seed)
+    
+    logger = None
+    if not args.disable_logging:
+        now = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        logdir = f"runs/{args.dataset}/{now}"
+        if args.log_name is not None:
+            logdir += f"_{args.log_name}"
+        logger = SummaryWriter(log_dir=logdir)
+        hparams = deepcopy(vars(args))
+        hparams = {k: json.dumps(v) if isinstance(v, list) else v for k, v in hparams.items()}
+        logger.add_hparams(hparams, dict())
 
     device = args.device
     nei_index, feats, mps, pos, label, idx_train, idx_val, idx_test = get_data(args)
@@ -61,20 +81,35 @@ def main(args: argparse.Namespace):
         sc_enc,
         contrast,
     ).to(device)
-    optimiser = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.l2_coef)
+    optimiser = torch.optim.Adam(
+        model.parameters(),
+        lr=args.lr,
+        weight_decay=args.l2_coef,
+        betas=(0, 0.999)
+    )
 
 
     best, best_t, best_state_dict = float("inf"), 0, None
-    for epoch in range(args.nb_epochs):
+    for epoch in tqdm(itertools.count(), dynamic_ncols=True):
         model.train()
         optimiser.zero_grad()
         loss = model(feats, pos, mps, nei_index)
 
         loss_item = loss.item()
-        logger.add_scalar("loss", loss_item, epoch)
-        logger.add_scalar("lr", optimiser.param_groups[0]["lr"], epoch)
-        logger.add_scalars("mp", {str(i): x for i, x in enumerate(model.mp.att.beta)}, epoch)
-        logger.add_scalars("sc", {str(i): x for i, x in enumerate(model.sc.inter.beta)}, epoch)
+        if logger is not None:
+            logger.add_scalar("loss", loss_item, epoch)
+            logger.add_scalar("lr", optimiser.param_groups[0]["lr"], epoch)
+            for i, x in enumerate(model.mp.att.beta):
+                logger.add_scalar(f"mp/{i}", x, epoch)
+            for i, x in enumerate(model.sc.inter.beta):
+                logger.add_scalar(f"sc/{i}", x, epoch)
+
+        if epoch % 100 == 0:
+            embeds = model.get_embeds(feats, mps)
+            metrics = evalulate_embeddings(args, embeds, label, idx_train, idx_val, idx_test, verbose=False)
+            if logger is not None:
+                for k, v in metrics.items():
+                    logger.add_scalar(k.replace("_", "/"), v, epoch)
 
         if loss_item < best:
             best, best_t = loss_item, epoch
@@ -90,12 +125,13 @@ def main(args: argparse.Namespace):
     print('Loading {}th epoch'.format(best_t))
     model.load_state_dict(best_state_dict)
     model.eval()
+
     embeds = model.get_embeds(feats, mps)
-
     metrics = evalulate_embeddings(args, embeds, label, idx_train, idx_val, idx_test)
-
-    hparams = {k: str(v) if isinstance(v, list) else v for k, v in vars(args).items()}
-    logger.add_hparams(hparams, metrics)
+    if logger is not None:
+        for k, v in metrics.items():
+            logger.add_scalar(k.replace("_", "/"), v, best_t)
+        logger.flush()
 
 
 if __name__ == '__main__':
