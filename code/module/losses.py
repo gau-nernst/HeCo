@@ -57,6 +57,7 @@ class ArcFace(nn.Module):
         assert margin < 0.5 * math.pi
         super().__init__()
         self.t_inv = 1.0 / temp
+        self.margin = margin
         self.cos_m = math.cos(margin)
         self.sin_m = math.sin(margin)
         self.threshold = math.cos(math.pi - margin)
@@ -70,6 +71,7 @@ class ArcFace(nn.Module):
             if pos_mat is None:
                 new_x2_x1 = new_x1_x2.t()
             else:
+                # pos_mat may not be symmetric, so we can't just transpose new_x1_x2
                 new_x2_x1 = self.update_logits(x1_x2.t(), pos_mat) * self.t_inv
             loss2 = InfoNCE.forward_logits(new_x2_x1, pos_mat)
             loss = (loss + loss2) * 0.5
@@ -78,14 +80,22 @@ class ArcFace(nn.Module):
     def update_logits(self, logits: Tensor, pos_mat: Optional[Tensor]):
         if pos_mat is None:
             pos_mat = torch.eye(logits.size(0), device=logits.device)
+        logits = logits.clone()  # there is an in-place assignment latter
         row_idx, col_idx = torch.nonzero(pos_mat, as_tuple=True)
         cos_theta = logits[row_idx, col_idx]
-        sin_theta = (1.0 - cos_theta ** 2) ** 0.5    
-        cos_theta_m = cos_theta * self.cos_m - sin_theta * self.sin_m
 
-        # if cos(theta) > cos(pi - margin), use cos(theta + m), else use cos(theta) - sin(pi - margin) * margin
-        # https://github.com/deepinsight/insightface/issues/2126
-        new_logits = torch.where(cos_theta > self.threshold, cos_theta_m, cos_theta - self.sinmm)
+        # old ArcFace: there is a threshold
+        # https://github.com/deepinsight/insightface/commit/657ae30e41fc53641a50a68694009d0530d9f6b3
+        # sin_theta = (1.0 - cos_theta ** 2) ** 0.5    
+        # cos_theta_m = cos_theta * self.cos_m - sin_theta * self.sin_m
+
+        # # if cos(theta) > cos(pi - margin), use cos(theta + m), else use cos(theta) - sin(pi - margin) * margin
+        # # https://github.com/deepinsight/insightface/issues/2126
+        # new_logits = torch.where(cos_theta > self.threshold, cos_theta_m, cos_theta - self.sinmm)
+
+        # new ArcFace
+        new_logits = torch.cos(cos_theta.acos() + self.margin)
+
         logits[row_idx, col_idx] = new_logits
         return logits
 
@@ -100,20 +110,44 @@ class Triplet(nn.Module):
         x1_x2 = sim(x1, x2)
 
         if pos_mat is None:
-            pos_mat = torch.eye(n, device=x1.device, dtype=torch.bool)
+            pos = x1_x2.diag().view(n, 1)
+            mask = ~torch.eye(n, dtype=torch.bool)
+            neg = x1_x2[mask].view(n, -1)
+            loss = F.relu(pos - neg + self.margin).mean()
+
+            if two_way:
+                neg = x1_x2.t()[mask].view(n, -1)
+                loss2 = F.relu(pos - neg + self.margin).mean()
+                loss = (loss + loss2) * 0.5
+
         else:
+            # since number of positives is not guaranteed to be the same for all nodes,
+            # we have to loop over each node, which is very slow
             pos_mat = pos_mat.bool()
-        
-        pos = x1_x2[pos_mat].view(n, -1, 1)  # (n, num_pos, 1). this only works because num_pos is constant across nodes
-        neg = x1_x2[~pos_mat].view(n, 1, -1)  # (n, 1, num_neg)
-        loss = F.relu(pos - neg + self.margin).mean()  # before mean: (n, num_pos, num_neg)
-        
-        if two_way:
-            x2_x1 = x1_x2.t()
-            pos = x2_x1[pos_mat].view(n, -1, 1)
-            neg = x2_x1[~pos_mat].view(n, 1, -1)
-            loss2 = F.relu(pos - neg + self.margin).mean()
-            loss = (loss + loss2) * 0.5
+            import functorch
+            def single(row, pos_idx):
+                pos = row[pos_idx].view(-1, 1)
+                neg = row[~pos_idx].view(1, -1)
+                return F.relu(pos - neg + self.margin).mean()
+            batch_fn = functorch.vmap(single)
+
+            loss = 0
+            for i in range(n):
+                pos = x1_x2[i, pos_mat[i]].view(-1, 1)
+                neg = x1_x2[i, ~pos_mat[i]].view(1, -1)
+                loss = loss + F.relu(pos - neg + self.margin).mean()
+            loss = loss / n
+
+            if two_way:
+                x2_x1 = x1_x2.t()
+                loss2 = 0
+                for i in range(n):
+                    pos = x2_x1[i, pos_mat[i]].view(-1, 1)
+                    neg = x2_x1[i, ~pos_mat[i]].view(1, -1)
+                    loss2 = loss2 + F.relu(pos - neg + self.margin).mean()
+                loss2 = loss2 / n
+                loss = (loss + loss2) * 0.5
+
         return loss
 
 
