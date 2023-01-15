@@ -48,7 +48,7 @@ def get_data(args):
 def main(args: argparse.Namespace):
     if args.seed is not None:
         seed_everything(args.seed)
-    
+
     logger = None
     if not args.disable_logging:
         logger = wandb.init(
@@ -125,7 +125,7 @@ def main(args: argparse.Namespace):
     embeds = model.get_embeds(feats, mps)
     metrics = evalulate_embeddings(args, embeds, label, idx_train, idx_val, idx_test)
     if logger is not None:
-        logger.log(metrics, step=best_t)
+        logger.log(metrics, step=epoch) # should log best_t instead, but wandb doesn't allow writing to previous step
         logger.finish()
 
 
