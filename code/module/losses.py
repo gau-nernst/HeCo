@@ -1,5 +1,6 @@
 import math
 from typing import Optional
+from functools import partial
 
 import torch
 import torch.nn.functional as F
@@ -53,11 +54,12 @@ class DCL(InfoNCE):
 
 # https://github.com/deepinsight/insightface/blob/master/recognition/arcface_torch/losses.py
 class ArcFace(nn.Module):
-    def __init__(self, temp: float, margin: float):
+    def __init__(self, temp: float, margin: float, new: bool):
         assert margin < 0.5 * math.pi
         super().__init__()
         self.t_inv = 1.0 / temp
         self.margin = margin
+        self.new = new
         self.cos_m = math.cos(margin)
         self.sin_m = math.sin(margin)
         self.threshold = math.cos(math.pi - margin)
@@ -78,23 +80,29 @@ class ArcFace(nn.Module):
         return loss
 
     def update_logits(self, logits: Tensor, pos_mat: Optional[Tensor]):
-        if pos_mat is None:
-            pos_mat = torch.eye(logits.size(0), device=logits.device)
-        logits = logits.clone()  # there is an in-place assignment latter
-        row_idx, col_idx = torch.nonzero(pos_mat, as_tuple=True)
+        # due to floating point precision, logits can be outside [-1, 1]
+        # which will cause problems for arccos() and sin_theta calculation later
+        logits = logits.clamp(min=-1, max=1)
+
+        if pos_mat is not None:
+            row_idx, col_idx = torch.nonzero(pos_mat, as_tuple=True)
+        else:
+            row_idx = col_idx = torch.arange(logits.shape[0], device=logits.device)
         cos_theta = logits[row_idx, col_idx]
 
-        # old ArcFace: there is a threshold
         # https://github.com/deepinsight/insightface/commit/657ae30e41fc53641a50a68694009d0530d9f6b3
-        # sin_theta = (1.0 - cos_theta ** 2) ** 0.5    
-        # cos_theta_m = cos_theta * self.cos_m - sin_theta * self.sin_m
+        if self.new:
+            # new ArcFace
+            new_logits = torch.cos(cos_theta.acos() + self.margin)
 
-        # # if cos(theta) > cos(pi - margin), use cos(theta + m), else use cos(theta) - sin(pi - margin) * margin
-        # # https://github.com/deepinsight/insightface/issues/2126
-        # new_logits = torch.where(cos_theta > self.threshold, cos_theta_m, cos_theta - self.sinmm)
+        else:
+            # old ArcFace: there is a threshold
+            sin_theta = (1.0 - cos_theta ** 2) ** 0.5    
+            cos_theta_m = cos_theta * self.cos_m - sin_theta * self.sin_m
 
-        # new ArcFace
-        new_logits = torch.cos(cos_theta.acos() + self.margin)
+            # if cos(theta) > cos(pi - margin), use cos(theta + m), else use cos(theta) - sin(pi - margin) * margin
+            # https://github.com/deepinsight/insightface/issues/2126
+            new_logits = torch.where(cos_theta > self.threshold, cos_theta_m, cos_theta - self.sinmm)
 
         logits[row_idx, col_idx] = new_logits
         return logits
@@ -124,12 +132,6 @@ class Triplet(nn.Module):
             # since number of positives is not guaranteed to be the same for all nodes,
             # we have to loop over each node, which is very slow
             pos_mat = pos_mat.bool()
-            import functorch
-            def single(row, pos_idx):
-                pos = row[pos_idx].view(-1, 1)
-                neg = row[~pos_idx].view(1, -1)
-                return F.relu(pos - neg + self.margin).mean()
-            batch_fn = functorch.vmap(single)
 
             loss = 0
             for i in range(n):
@@ -155,13 +157,14 @@ def build_loss(name: str, temp: float, margin: float):
     loss_mapping = dict(
         info_nce=InfoNCE,
         dcl=DCL,
-        arcface=ArcFace,
+        arcface=partial(ArcFace, new=True),
+        arcface_old=partial(ArcFace, new=False),
         triplet=Triplet,
     )
     assert name in loss_mapping
     kwargs = dict()
-    if name in ("info_nce", "dcl", "arcface"):
+    if name in ("info_nce", "dcl", "arcface", "arcface_old"):
         kwargs.update(temp=temp)
-    if name in ("arcface", "triplet"):
+    if name in ("arcface", "arcface_old", "triplet"):
         kwargs.update(margin=margin)
     return loss_mapping[name](**kwargs)
