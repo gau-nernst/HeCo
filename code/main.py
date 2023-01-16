@@ -14,6 +14,7 @@ from utils import evalulate_embeddings, load_data, set_params
 
 torch.backends.cuda.matmul.allow_tf32 = False
 torch.backends.cudnn.allow_tf32 = False
+torch.autograd.set_detect_anomaly(True)
 
 
 def seed_everything(seed):
@@ -65,7 +66,7 @@ def main(args: argparse.Namespace):
     mp_enc = Mp_encoder(P, args.hidden_dim, args.attn_drop)
     sc_enc = Sc_encoder(args.hidden_dim, args.sample_rate, args.attn_drop)
 
-    loss = build_loss(args.loss_type, args.temp, args.margin)
+    loss = build_loss(args)
     contrast = build_contrast(args.contrast_type, args.hidden_dim, loss, args.beta1, args.beta2)
 
     model = HeCo(

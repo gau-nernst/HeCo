@@ -29,10 +29,14 @@ def get_parser():
 
     # contrastive learning
     parser.add_argument("--multi_positive", action="store_true")
-    parser.add_argument("--loss_type", default="info_nce", choices=["info_nce", "dcl", "arcface", "triplet"])
+    parser.add_argument("--loss_type", default="info_nce")
     parser.add_argument("--contrast_type", default="contrast", choices=["contrast", "contrast_drop"])
     parser.add_argument("--temp", type=float)
-    parser.add_argument("--margin", type=float, default=0.0)    # for arcface and triplet loss
+    parser.add_argument("--margin", type=float, default=0.0)  # for arcface and triplet loss
+    parser.add_argument("--lambd", type=float, default=0.0)  # for barlow twins
+    parser.add_argument("--sim_coef", type=float, default=0.0)  # for vicreg
+    parser.add_argument("--std_coef", type=float, default=0.0)
+    parser.add_argument("--cov_coef", type=float, default=0.0)
     parser.add_argument("--beta1", type=float, default=0.25)
     parser.add_argument("--beta2", type=float, default=0.25)
 

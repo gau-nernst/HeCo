@@ -1,3 +1,4 @@
+import argparse
 import math
 from typing import Optional
 from functools import partial
@@ -153,18 +154,82 @@ class Triplet(nn.Module):
         return loss
 
 
-def build_loss(name: str, temp: float, margin: float):
-    loss_mapping = dict(
-        info_nce=InfoNCE,
-        dcl=DCL,
-        arcface=partial(ArcFace, new=True),
-        arcface_old=partial(ArcFace, new=False),
-        triplet=Triplet,
-    )
-    assert name in loss_mapping
-    kwargs = dict()
-    if name in ("info_nce", "dcl", "arcface", "arcface_old"):
-        kwargs.update(temp=temp)
-    if name in ("arcface", "arcface_old", "triplet"):
-        kwargs.update(margin=margin)
-    return loss_mapping[name](**kwargs)
+# https://github.com/facebookresearch/barlowtwins/blob/main/main.py
+class BarlowTwins(nn.Module):
+    def __init__(self, lambd: float):
+        super().__init__()
+        self.lambd = lambd
+
+    def forward(self, x1: Tensor, x2: Tensor, pos_mat = None, two_way = True):
+        if pos_mat is not None:
+            raise NotImplementedError("Multi positive is not supported for Barlow Twins")
+
+        num_nodes, z_dim = x1.shape
+        cross_corr = self.bn(x1).t() @ self.bn(x2) / num_nodes
+        on_diag = cross_corr.diag().add(-1).square().sum()  # invariance term
+
+        mask = ~torch.eye(z_dim, device=x1.device, dtype=torch.bool)
+        off_diag = cross_corr[mask].square().sum()  # redundancy reduction term
+
+        loss = on_diag + off_diag * self.lambd
+        return loss
+
+    @staticmethod
+    def bn(x: Tensor):
+        return F.batch_norm(x, None, None, training=True)
+
+
+# https://github.com/facebookresearch/vicreg/blob/main/main_vicreg.py
+class VICReg(nn.Module):
+    def __init__(self, sim_coef: float, std_coef: float, cov_coef: float):
+        super().__init__()
+        self.sim_coef = sim_coef
+        self.std_coef = std_coef
+        self.cov_coef = cov_coef
+    
+    def forward(self, x1: Tensor, x2: Tensor, pos_mat = None, two_way = True):
+        if pos_mat is not None:
+            raise NotImplementedError("Multi positive is not supported for Barlow Twins")
+        
+        sim_loss = F.mse_loss(x1, x2)  # this is before mean-centered
+
+        x1 = x1 - x1.mean(0, keepdim=True)
+        x2 = x2 - x2.mean(0, keepdim=True)
+
+        std_loss = (self.std_loss(x1) + self.std_loss(x2)) * 0.5
+        cov_loss = (self.cov_loss(x1) + self.cov_loss(x2)) * 0.5
+
+        loss = sim_loss * self.sim_coef + std_loss * self.std_coef + cov_loss * self.cov_coef
+        return loss
+
+    @staticmethod
+    def std_loss(x: Tensor):
+        std = x.var(0).add(1e-4).sqrt()
+        return F.relu(1 - std).mean()
+
+    @staticmethod
+    def cov_loss(x: Tensor):
+        num_nodes, z_dim = x.shape
+        cov = x.t() @ x / (num_nodes - 1)
+        mask = ~torch.eye(z_dim, device=x.device, dtype=torch.bool)
+        return cov[mask].square().sum() / z_dim
+
+
+def build_loss(args: argparse.Namespace):
+    name = args.loss_type
+    if name == "info_nce":
+        return InfoNCE(args.temp)
+    elif name == "dcl":
+        return DCL(args.temp)
+    elif name == "arcface":
+        return ArcFace(args.temp, args.margin, True)
+    elif name == "arcface_old":
+        return ArcFace(args.temp, args.margin, False)
+    elif name == "triplet":
+        return Triplet(args.margin)
+    elif name == "barlow_twins":
+        return BarlowTwins(args.lambd)
+    elif name == "vicreg":
+        return VICReg(args.sim_coef, args.std_coef, args.cov_coef)
+    else:
+        raise ValueError(f"Loss {name} is not supported")
