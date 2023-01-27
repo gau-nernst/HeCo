@@ -37,6 +37,7 @@ class InfoNCE(nn.Module):
             numerator_log = (logits + (1.0 - pos_mat) * _NEG_INF).logsumexp(1)
             denominator_log = logits.logsumexp(1)
             return (denominator_log - numerator_log).mean()
+            # return F.cross_entropy(logits, pos_mat / pos_mat.sum(1, keepdim=True))
 
 
 class DCL(InfoNCE):
@@ -154,6 +155,36 @@ class Triplet(nn.Module):
         return loss
 
 
+# similar to Barlow Twins
+class Regression(nn.Module):
+    def __init__(self, lambd: float):
+        super().__init__()
+        self.lambd = lambd
+    
+    def forward(self, x1: Tensor, x2: Tensor, pos_mat: Tensor = None, two_way: bool = True):
+        n = x1.shape[0]
+        if pos_mat is None:
+            pos_mat = torch.eye(x1.shape[0], device=x1.device, dtype=torch.bool)
+        else:
+            pos_mat = pos_mat.bool()
+        
+        x1_x2 = sim(x1, x2)
+        num_pos = pos_mat.sum(1)
+
+        pos_loss = x1_x2[pos_mat].add(-1).square().sum(1).div(num_pos).mean()
+        neg_loss = x1_x2[~pos_mat].square().sum(1).div(n - num_pos).mean()
+        loss = pos_loss + neg_loss * self.lambd
+
+        if two_way:
+            x2_x1 = x1_x2.t()
+            pos_loss = x2_x1[pos_mat].add(-1).square().sum(1).div(num_pos).mean()
+            neg_loss = x2_x1[~pos_mat].square().sum(1).div(n - num_pos).mean()
+            loss2 = pos_loss + neg_loss * self.lambd
+            loss = (loss + loss2) * 0.5
+        
+        return loss
+
+
 # https://github.com/facebookresearch/barlowtwins/blob/main/main.py
 class BarlowTwins(nn.Module):
     def __init__(self, lambd: float):
@@ -216,20 +247,13 @@ class VICReg(nn.Module):
 
 
 def build_loss(args: argparse.Namespace):
-    name = args.loss_type
-    if name == "info_nce":
-        return InfoNCE(args.temp)
-    elif name == "dcl":
-        return DCL(args.temp)
-    elif name == "arcface":
-        return ArcFace(args.temp, args.margin, True)
-    elif name == "arcface_old":
-        return ArcFace(args.temp, args.margin, False)
-    elif name == "triplet":
-        return Triplet(args.margin)
-    elif name == "barlow_twins":
-        return BarlowTwins(args.lambd)
-    elif name == "vicreg":
-        return VICReg(args.sim_coef, args.std_coef, args.cov_coef)
-    else:
-        raise ValueError(f"Loss {name} is not supported")
+    return dict(
+        info_nce=partial(InfoNCE, args.temp),
+        dcl=partial(DCL, args.temp),
+        arcface=partial(ArcFace, args.temp, args.margin, True),
+        arcface_old=partial(ArcFace, args.temp, args.margin, False),
+        triplet=partial(Triplet, args.margin),
+        regression=partial(Regression, args.lambd),
+        barlow_twins=partial(BarlowTwins, args.lambd),
+        vicreg=partial(VICReg, args.sim_coef, args.std_coef, args.cov_coef),
+    )[args.loss_type]()
