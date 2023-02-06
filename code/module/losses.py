@@ -1,7 +1,8 @@
 import argparse
 import math
-from typing import Optional
+from typing import Optional, List
 from functools import partial
+import re
 
 import torch
 import torch.nn.functional as F
@@ -15,34 +16,41 @@ def sim(x1: Tensor, x2: Tensor) -> Tensor:
 
 
 class InfoNCE(nn.Module):
-    def __init__(self, temp: float):
+    def __init__(self, temp: float, soft_label: bool = False):
         super().__init__()
         self.t_inv = 1.0 / temp
+        self.soft_label = soft_label
 
     def forward(self, x1: Tensor, x2: Tensor, pos_mat: Optional[Tensor] = None, two_way: bool = True):
         x1_x2 = sim(x1, x2) * self.t_inv
-        loss = self.forward_logits(x1_x2, pos_mat)
+        loss = self.forward_logits(x1_x2, pos_mat, self.soft_label)
         if two_way:
-            loss2 = self.forward_logits(x1_x2.t(), pos_mat)
+            loss2 = self.forward_logits(x1_x2.t(), pos_mat, self.soft_label)
             loss = (loss + loss2) * 0.5
         return loss
 
     @staticmethod
-    def forward_logits(logits: Tensor, pos_mat: Optional[Tensor]):
+    def forward_logits(logits: Tensor, pos_mat: Optional[Tensor], soft_label: bool):
         if pos_mat is None:
             labels = torch.arange(logits.size(0), device=logits.device)
             return F.cross_entropy(logits, labels)
         
+        elif soft_label:
+            return F.cross_entropy(logits, pos_mat / pos_mat.sum(1, keepdim=True))
+
         else:
             numerator_log = (logits + (1.0 - pos_mat) * _NEG_INF).logsumexp(1)
             denominator_log = logits.logsumexp(1)
             return (denominator_log - numerator_log).mean()
-            # return F.cross_entropy(logits, pos_mat / pos_mat.sum(1, keepdim=True))
 
 
 class DCL(InfoNCE):
+    def __init__(self, temp: float, soft_label: bool = False):
+        assert soft_label is False, "DCL does not support soft_label"
+        super().__init__(temp, soft_label)
+    
     @staticmethod
-    def forward_logits(logits: Tensor, pos_mat: Optional[Tensor]):
+    def forward_logits(logits: Tensor, pos_mat: Optional[Tensor], soft_label: bool):
         if pos_mat is None:
             pos_mat = torch.eye(logits.size(0), device=logits.device)
             numerator_log = logits.diag()
@@ -56,12 +64,13 @@ class DCL(InfoNCE):
 
 # https://github.com/deepinsight/insightface/blob/master/recognition/arcface_torch/losses.py
 class ArcFace(nn.Module):
-    def __init__(self, temp: float, margin: float, new: bool):
+    def __init__(self, temp: float, margin: float, old: bool, soft_label: bool = False):
         assert margin < 0.5 * math.pi
         super().__init__()
         self.t_inv = 1.0 / temp
+        self.soft_label = soft_label
         self.margin = margin
-        self.new = new
+        self.old = old
         self.cos_m = math.cos(margin)
         self.sin_m = math.sin(margin)
         self.threshold = math.cos(math.pi - margin)
@@ -70,14 +79,14 @@ class ArcFace(nn.Module):
     def forward(self, x1: Tensor, x2: Tensor, pos_mat: Optional[Tensor] = None, two_way: bool = True):
         x1_x2 = sim(x1, x2)
         new_x1_x2 = self.update_logits(x1_x2, pos_mat) * self.t_inv
-        loss = InfoNCE.forward_logits(new_x1_x2, pos_mat)
+        loss = InfoNCE.forward_logits(new_x1_x2, pos_mat, self.soft_label)
         if two_way:
             if pos_mat is None:
                 new_x2_x1 = new_x1_x2.t()
             else:
                 # pos_mat may not be symmetric, so we can't just transpose new_x1_x2
                 new_x2_x1 = self.update_logits(x1_x2.t(), pos_mat) * self.t_inv
-            loss2 = InfoNCE.forward_logits(new_x2_x1, pos_mat)
+            loss2 = InfoNCE.forward_logits(new_x2_x1, pos_mat, self.soft_label)
             loss = (loss + loss2) * 0.5
         return loss
 
@@ -89,15 +98,12 @@ class ArcFace(nn.Module):
         if pos_mat is not None:
             row_idx, col_idx = torch.nonzero(pos_mat, as_tuple=True)
         else:
-            row_idx = col_idx = torch.arange(logits.shape[0], device=logits.device)
+            row_idx = torch.arange(logits.shape[0], device=logits.device)
+            col_idx = torch.arange(logits.shape[0], device=logits.device)
         cos_theta = logits[row_idx, col_idx]
 
         # https://github.com/deepinsight/insightface/commit/657ae30e41fc53641a50a68694009d0530d9f6b3
-        if self.new:
-            # new ArcFace
-            new_logits = torch.cos(cos_theta.acos() + self.margin)
-
-        else:
+        if self.old:
             # old ArcFace: there is a threshold
             sin_theta = (1.0 - cos_theta ** 2) ** 0.5    
             cos_theta_m = cos_theta * self.cos_m - sin_theta * self.sin_m
@@ -105,6 +111,10 @@ class ArcFace(nn.Module):
             # if cos(theta) > cos(pi - margin), use cos(theta + m), else use cos(theta) - sin(pi - margin) * margin
             # https://github.com/deepinsight/insightface/issues/2126
             new_logits = torch.where(cos_theta > self.threshold, cos_theta_m, cos_theta - self.sinmm)
+
+        else:
+            # new ArcFace
+            new_logits = torch.cos(cos_theta.acos() + self.margin)
 
         logits[row_idx, col_idx] = new_logits
         return logits
@@ -192,8 +202,8 @@ class BarlowTwins(nn.Module):
         self.lambd = lambd
 
     def forward(self, x1: Tensor, x2: Tensor, pos_mat = None, two_way = True):
-        if pos_mat is not None:
-            raise NotImplementedError("Multi positive is not supported for Barlow Twins")
+        # if pos_mat is not None:
+        #     raise NotImplementedError("Multi positive is not supported for Barlow Twins")
 
         num_nodes, z_dim = x1.shape
         cross_corr = self.bn(x1).t() @ self.bn(x2) / num_nodes
@@ -219,8 +229,8 @@ class VICReg(nn.Module):
         self.cov_coef = cov_coef
     
     def forward(self, x1: Tensor, x2: Tensor, pos_mat = None, two_way = True):
-        if pos_mat is not None:
-            raise NotImplementedError("Multi positive is not supported for Barlow Twins")
+        # if pos_mat is not None:
+        #     raise NotImplementedError("Multi positive is not supported for Barlow Twins")
         
         sim_loss = F.mse_loss(x1, x2)  # this is before mean-centered
 
@@ -246,14 +256,37 @@ class VICReg(nn.Module):
         return cov[mask].square().sum() / z_dim
 
 
+class CompositeLoss(nn.Module):
+    def __init__(self, losses: List[nn.Module], loss_weights: List[float]):
+        assert len(losses) == len(loss_weights)
+        super().__init__()
+        self.losses = nn.ModuleList(losses)
+        self.loss_weights = loss_weights
+    
+    def forward(self, x1: Tensor, x2: Tensor, pos_mat = None, two_way = True):
+        out = 0
+        for loss, weight in zip(self.losses, self.loss_weights):
+            out += loss(x1, x2, pos_mat, two_way) * weight
+        return out
+
+
 def build_loss(args: argparse.Namespace):
-    return dict(
-        info_nce=partial(InfoNCE, args.temp),
-        dcl=partial(DCL, args.temp),
-        arcface=partial(ArcFace, args.temp, args.margin, True),
-        arcface_old=partial(ArcFace, args.temp, args.margin, False),
+    loss_dict = dict(
+        info_nce=partial(InfoNCE, args.temp, args.soft_label),
+        dcl=partial(DCL, args.temp, args.soft_label),
+        arcface=partial(ArcFace, args.temp, args.margin, False, args.soft_label),
+        arcface_old=partial(ArcFace, args.temp, args.margin, True, args.soft_label),
         triplet=partial(Triplet, args.margin),
         regression=partial(Regression, args.lambd),
         barlow_twins=partial(BarlowTwins, args.lambd),
         vicreg=partial(VICReg, args.sim_coef, args.std_coef, args.cov_coef),
-    )[args.loss_type]()
+    )
+    if args.loss_type in loss_dict:
+        return loss_dict[args.loss_type]()
+    else:
+        # e.g. "info_nce_0.5_barlow_twins_0.5"
+        losses, loss_weights = zip(*re.findall(r"([a-z]\w+[a-z])_([\d\.]+)", args.loss_type))
+        print(f"Composite loss: {losses} {loss_weights}")
+        losses = [loss_dict[loss]() for loss in losses]
+        loss_weights = [float(weight) for weight in loss_weights]
+        return CompositeLoss(losses, loss_weights)
