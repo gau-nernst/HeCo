@@ -41,13 +41,14 @@ class HeCo(nn.Module):
     def forward(self, feats, pos, mps, nei_index):  # p a s
         if not self.multi_positive:
             pos = None
-        z_mp, z_sc = self.forward_features(feats, mps, nei_index)
         
         if isinstance(self.contrast, ContrastDrop):
+            z_mp1, z_sc1 = self.forward_features(feats, mps, nei_index)
             z_mp2, z_sc2 = self.forward_features(feats, mps, nei_index)
-            return self.contrast(z_mp, z_mp2, z_sc, z_sc2, pos)
+            return self.contrast(z_mp1, z_mp2, z_sc1, z_sc2, pos)
 
         else:
+            z_mp, z_sc = self.forward_features(feats, mps, nei_index)
             return self.contrast(z_mp, z_sc, pos)
 
     @torch.no_grad()

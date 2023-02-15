@@ -21,7 +21,7 @@ class Contrast(nn.Module):
 
 class ContrastDrop(Contrast):
     def __init__(self, hidden_dim: int, loss: nn.Module, beta1: float, beta2: float):
-        assert beta1 + beta2 <= 1
+        assert beta1 >= 0 and beta2 >= 0 and 0 <= beta1 + beta2 <= 1
         super().__init__(hidden_dim, loss)
         self.beta1 = beta1
         self.beta2 = beta2
