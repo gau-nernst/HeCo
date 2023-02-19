@@ -67,7 +67,7 @@ def main(args: argparse.Namespace):
     sc_enc = Sc_encoder(args.hidden_dim, args.sample_rate, args.attn_drop)
 
     loss = build_loss(args)
-    contrast = build_contrast(args.contrast_type, args.hidden_dim, loss, args.beta1, args.beta2)
+    contrast = build_contrast(args.contrast_type, args.hidden_dim, loss, args.mp_beta, args.sc_beta)
 
     model = HeCo(
         args.hidden_dim,

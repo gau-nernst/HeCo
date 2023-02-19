@@ -38,8 +38,10 @@ def get_parser():
     parser.add_argument("--sim_coef", type=float, default=0.0)  # for vicreg
     parser.add_argument("--std_coef", type=float, default=0.0)
     parser.add_argument("--cov_coef", type=float, default=0.0)
-    parser.add_argument("--beta1", type=float, default=0.25)
-    parser.add_argument("--beta2", type=float, default=0.25)
+    parser.add_argument("--mp_beta", type=float, default=0)
+    parser.add_argument("--sc_beta", type=float, default=0)
+    parser.add_argument("--n_clusters", type=int, default=10)  # deepcluster
+    parser.add_argument("--cluster_interval", type=int, default=10)
 
     parser.add_argument("--disable_logging", action="store_true")
     parser.add_argument("--log_name")

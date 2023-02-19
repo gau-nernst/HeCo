@@ -20,12 +20,12 @@ class Contrast(nn.Module):
 
 
 class ContrastDrop(Contrast):
-    def __init__(self, hidden_dim: int, loss: nn.Module, beta1: float, beta2: float):
-        assert beta1 >= 0 and beta2 >= 0 and 0 <= beta1 + beta2 <= 1
+    def __init__(self, hidden_dim: int, loss: nn.Module, mp_beta: float, sc_beta: float):
+        assert mp_beta >= 0 and sc_beta >= 0 and 0 <= mp_beta + sc_beta <= 1
         super().__init__(hidden_dim, loss)
-        self.beta1 = beta1
-        self.beta2 = beta2
-        self.beta = 1.0 - beta1 - beta2
+        self.mp_beta = mp_beta
+        self.sc_beta = sc_beta
+        self.beta = 1.0 - mp_beta - sc_beta
 
     def forward(self, z_mp1: Tensor, z_mp2: Tensor, z_sc1: Tensor,  z_sc2: Tensor, pos_mat: Tensor) -> Tensor:
         z_mp1, z_mp2, z_sc1, z_sc2 = map(self.proj, (z_mp1, z_mp2, z_sc1, z_sc2))
@@ -33,10 +33,10 @@ class ContrastDrop(Contrast):
         mp_sc_loss = self.loss(z_mp1, z_sc1, pos_mat=pos_mat)
         mp_loss = self.loss(z_mp1, z_mp2, pos_mat=pos_mat, two_way=False)
         sc_loss = self.loss(z_sc1, z_sc2, pos_mat=pos_mat, two_way=False)
-        return mp_sc_loss * self.beta + mp_loss * self.beta1 + sc_loss * self.beta2
+        return mp_sc_loss * self.beta + mp_loss * self.mp_beta + sc_loss * self.sc_beta
 
 
-def build_contrast(contrast_type: str, hidden_dim: int, loss: nn.Module, beta1: float, beta2: float):
+def build_contrast(contrast_type: str, hidden_dim: int, loss: nn.Module, mp_beta: float, sc_beta: float):
     contrast_mapping = dict(
         contrast=Contrast,
         contrast_drop=ContrastDrop,
@@ -44,5 +44,5 @@ def build_contrast(contrast_type: str, hidden_dim: int, loss: nn.Module, beta1: 
     assert contrast_type in contrast_mapping
     kwargs = dict(hidden_dim=hidden_dim, loss=loss)
     if contrast_type == "contrast_drop":
-        kwargs.update(beta1=beta1, beta2=beta2)
+        kwargs.update(mp_beta=mp_beta, sc_beta=sc_beta)
     return contrast_mapping[contrast_type](**kwargs)
