@@ -7,6 +7,8 @@ import numpy as np
 import torch
 from tqdm import tqdm
 import wandb
+from sklearn.cluster import KMeans
+import torch.nn.functional as F
 
 from module import HeCo, Mp_encoder, Sc_encoder, build_contrast, build_loss
 from utils import evalulate_embeddings, load_data, set_params
@@ -25,6 +27,18 @@ def seed_everything(seed):
     random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
+
+
+def run_kmeans(embs: torch.Tensor, n_clusters: int):
+    kmeans = KMeans(n_clusters)
+    embs_np = F.normalize(embs.detach()).cpu().numpy()  # normalize vectors so that Euclidean distance is equal to cosine distance
+    assignments = kmeans.fit_predict(embs_np)
+    for i in range(n_clusters):
+        if (assignments == i).sum() == 0:
+            raise RuntimeError(f"Cluster {i} has no members")
+    assignments = torch.from_numpy(assignments).to(embs.device).long()
+    centroids = torch.from_numpy(kmeans.cluster_centers_).to(embs.device)
+    return assignments, centroids
 
 
 def get_data(args):
@@ -89,6 +103,21 @@ def main(args: argparse.Namespace):
 
     best, best_t, best_state_dict = float("inf"), 0, None
     for epoch in tqdm(itertools.count(), dynamic_ncols=True):
+        if epoch % 100 == 0 and logger is not None:
+            model.eval()
+            embeds = model.get_embeds(feats, mps)
+            metrics = evalulate_embeddings(args, embeds, label, idx_train, idx_val, idx_test, verbose=False)
+            logger.log(metrics, step=epoch)
+
+        if args.loss_type == "deepcluster" and epoch % args.cluster_interval == 0:
+            model.eval()
+            with torch.no_grad():
+                embeds = model.get_embeds(feats, mps, nei_index)
+                assignments, centroids = run_kmeans(embeds, args.n_clusters)
+
+                model.contrast.loss.assignments = assignments
+                model.contrast.loss.centroids.copy_(centroids)
+
         model.train()
         optimiser.zero_grad()
         loss = model(feats, pos, mps, nei_index)
@@ -101,12 +130,6 @@ def main(args: argparse.Namespace):
             for i, x in enumerate(model.sc.inter.beta):
                 log_dict[f"sc/{i}"] = x
             logger.log(log_dict, step=epoch)
-
-        if epoch % 100 == 0:
-            embeds = model.get_embeds(feats, mps)
-            metrics = evalulate_embeddings(args, embeds, label, idx_train, idx_val, idx_test, verbose=False)
-            if logger is not None:
-                logger.log(metrics, step=epoch)
 
         if loss_item < best:
             best, best_t = loss_item, epoch

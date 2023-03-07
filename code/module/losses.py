@@ -7,7 +7,6 @@ import re
 import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
-from sklearn.cluster import KMeans
 
 _NEG_INF = -1e8
 
@@ -258,35 +257,16 @@ class VICReg(nn.Module):
 
 
 class DeepCluster(nn.Module):
-    def __init__(self, temp: float, n_clusters: int, cluster_interval: int, emb_dim: int):
+    def __init__(self, temp: float, n_clusters: int, emb_dim: int):
         super().__init__()
         self.t_inv = 1.0 / temp
-        self.cluster_interval = cluster_interval
         self.counter = 0
-        self.mp_centroids = nn.Parameter(torch.empty(n_clusters, emb_dim))
-        self.sc_centroids = nn.Parameter(torch.empty(n_clusters, emb_dim))
-        self.mp_assignments = None
-        self.sc_assignments = None
+        self.centroids = nn.Parameter(torch.empty(n_clusters, emb_dim))
+        self.assignments = None
 
     def forward(self, x1: Tensor, x2: Tensor, pos_mat = None, two_way = True):
-        if self.counter % self.cluster_interval == 0:
-            self.mp_assignments = self.update_kmeans(x1, self.mp_centroids)
-            self.sc_assignments = self.update_kmeans(x2, self.sc_centroids)
-        
-        mp_to_sc_centroids = sim(x1, self.sc_centroids) * self.t_inv
-        sc_to_mp_centroids = sim(x2, self.mp_centroids) * self.t_inv
-
-        loss1 = F.cross_entropy(mp_to_sc_centroids, self.sc_assignments)
-        loss2 = F.cross_entropy(sc_to_mp_centroids, self.mp_assignments)
-        return (loss1 + loss2) * 0.5
-
-    @staticmethod
-    def update_kmeans(xs: Tensor, centroids: Tensor):
-        kmeans = KMeans(centroids.shape[0])
-        assignments = kmeans.fit_predict(xs.detach().cpu().numpy())
-        with torch.no_grad():
-            centroids.copy_(torch.from_numpy(kmeans.cluster_centers_))
-        return torch.from_numpy(assignments).to(xs.device).long()
+        logits = sim(x1, self.centroids) * self.t_inv
+        return F.cross_entropy(logits, self.assignments)
 
 
 class CompositeLoss(nn.Module):
@@ -313,7 +293,7 @@ def build_loss(args: argparse.Namespace):
         regression=partial(Regression, args.lambd),
         barlow_twins=partial(BarlowTwins, args.lambd),
         vicreg=partial(VICReg, args.sim_coef, args.std_coef, args.cov_coef),
-        deepcluster=partial(DeepCluster, args.temp, args.n_clusters, args.cluster_interval, args.hidden_dim)
+        deepcluster=partial(DeepCluster, args.temp, args.n_clusters, args.hidden_dim)
     )
     if args.loss_type in loss_dict:
         return loss_dict[args.loss_type]()
