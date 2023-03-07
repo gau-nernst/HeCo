@@ -53,5 +53,5 @@ class HeCo(nn.Module):
 
     @torch.no_grad()
     def get_embeds(self, feats, mps):
-        z_mp = F.elu(self.fc_list[0](feats[0]))
+        z_mp = self.fc_list[0](feats[0])
         return self.mp(z_mp, mps)
