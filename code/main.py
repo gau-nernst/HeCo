@@ -112,7 +112,7 @@ def main(args: argparse.Namespace):
         if args.loss_type == "deepcluster" and epoch % args.cluster_interval == 0:
             model.eval()
             with torch.no_grad():
-                embeds = model.get_embeds(feats, mps, nei_index)
+                embeds = model.get_embeds(feats, mps)
                 assignments, centroids = run_kmeans(embeds, args.n_clusters)
 
                 model.contrast.loss.assignments = assignments
