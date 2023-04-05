@@ -43,6 +43,7 @@ def get_parser():
     parser.add_argument("--n_clusters", type=int, default=10)  # deepcluster
     parser.add_argument("--cluster_interval", type=int, default=10)
 
+    parser.add_argument("--save_embs")
     parser.add_argument("--disable_logging", action="store_true")
     parser.add_argument("--log_name")
 

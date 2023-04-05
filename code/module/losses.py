@@ -269,6 +269,21 @@ class DeepCluster(nn.Module):
         return F.cross_entropy(logits, self.assignments)
 
 
+class SpectralClustering(nn.Module):
+    def __init__(self, temp, n_labels, emb_dim):
+        super().__init__()
+        self.t_inv = 1 / temp
+        # self.fc = nn.Linear(emb_dim, n_labels, bias=False)
+        self.prototypes = nn.Parameter(torch.empty(n_labels, emb_dim))
+        nn.init.normal_(self.prototypes, 0, 1 / emb_dim ** 0.5)
+        self.labels = None
+
+    def forward(self, x1, x2, pos_mat = None, two_way = True):
+        # logits = self.fc(x1)
+        logits = sim(x1, self.prototypes) * self.t_inv
+        return F.cross_entropy(logits, self.labels)
+
+
 class CompositeLoss(nn.Module):
     def __init__(self, losses: List[nn.Module], loss_weights: List[float]):
         assert len(losses) == len(loss_weights)
@@ -293,7 +308,8 @@ def build_loss(args: argparse.Namespace):
         regression=partial(Regression, args.lambd),
         barlow_twins=partial(BarlowTwins, args.lambd),
         vicreg=partial(VICReg, args.sim_coef, args.std_coef, args.cov_coef),
-        deepcluster=partial(DeepCluster, args.temp, args.n_clusters, args.hidden_dim)
+        deepcluster=partial(DeepCluster, args.temp, args.n_clusters, args.hidden_dim),
+        spectral_clustering=partial(SpectralClustering, args.temp, args.n_clusters, args.hidden_dim),
     )
     if args.loss_type in loss_dict:
         return loss_dict[args.loss_type]()

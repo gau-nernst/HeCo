@@ -7,8 +7,10 @@ import numpy as np
 import torch
 from tqdm import tqdm
 import wandb
-from sklearn.cluster import KMeans
+from sklearn.cluster import KMeans, spectral_clustering
 import torch.nn.functional as F
+import scipy.sparse
+import networkx
 
 from module import HeCo, Mp_encoder, Sc_encoder, build_contrast, build_loss
 from utils import evalulate_embeddings, load_data, set_params
@@ -81,6 +83,21 @@ def main(args: argparse.Namespace):
     sc_enc = Sc_encoder(args.hidden_dim, args.sample_rate, args.attn_drop)
 
     loss = build_loss(args)
+    if args.loss_type == "spectral_clustering":
+        adj = mps[0]
+        for mp in mps[1:]:
+            adj = adj + mp
+        adj = adj.coalesce()
+        values = adj.values().cpu().numpy()
+        indices = adj.indices().cpu().numpy()
+        adj = scipy.sparse.coo_matrix((values, (indices[0], indices[1])))
+
+    #     adj = networkx.from_scipy_sparse_array(adj)
+    #     for component in networkx.connected_components(adj):
+
+        labels = spectral_clustering(adj, n_clusters=args.n_clusters)
+        loss.labels = torch.from_numpy(labels).long().to(args.device)
+
     contrast = build_contrast(args.contrast_type, args.hidden_dim, loss, args.mp_beta, args.sc_beta)
 
     model = HeCo(
@@ -100,6 +117,15 @@ def main(args: argparse.Namespace):
         betas=(args.adam_beta1, 0.999)
     )
 
+    if args.save_embs is not None:
+        model.train()
+        with torch.no_grad():
+            z_mp, z_sc = model.forward_features(feats, mps, nei_index)
+        np.save(f"{args.dataset}_before_train_{args.save_embs}_mp", z_mp.cpu().numpy())
+        np.save(f"{args.dataset}_before_train_{args.save_embs}_sc", z_sc.cpu().numpy())
+
+        np.save(f"{args.dataset}_before_train_{args.save_embs}_mp1", model.get_embeds(feats, mps).cpu().numpy())
+        np.save(f"{args.dataset}_before_train_{args.save_embs}_mp2", model.get_embeds(feats, mps).cpu().numpy())
 
     best, best_t, best_state_dict = float("inf"), 0, None
     for epoch in tqdm(itertools.count(), dynamic_ncols=True):
@@ -144,8 +170,18 @@ def main(args: argparse.Namespace):
 
     print('Loading {}th epoch'.format(best_t))
     model.load_state_dict(best_state_dict)
-    model.eval()
+    
+    if args.save_embs is not None:
+        model.train()
+        with torch.no_grad():
+            z_mp, z_sc = model.forward_features(feats, mps, nei_index)
+        np.save(f"{args.dataset}_{args.save_embs}_mp", z_mp.cpu().numpy())
+        np.save(f"{args.dataset}_{args.save_embs}_sc", z_sc.cpu().numpy())
 
+        np.save(f"{args.dataset}_{args.save_embs}_mp1", model.get_embeds(feats, mps).cpu().numpy())
+        np.save(f"{args.dataset}_{args.save_embs}_mp2", model.get_embeds(feats, mps).cpu().numpy())
+
+    model.eval()
     embeds = model.get_embeds(feats, mps)
     metrics = evalulate_embeddings(args, embeds, label, idx_train, idx_val, idx_test)
     if logger is not None:
